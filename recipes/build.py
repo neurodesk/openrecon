@@ -90,12 +90,29 @@ import shutil
 try:
     # Build Docker image docker buildx build --platform linux/amd64
     print('Attempting to create Docker image with tag:', dockerImagename, '...')
-    output = subprocess.check_output(['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--no-cache', '--progress=plain', '-t', dockerImagename, '-f', dockerfilePath, './'], stderr=subprocess.STDOUT)
+    # Initialize Docker-in-Docker client
+    docker_client_image = "docker:24.0-dind"
+    # Pull the Docker-in-Docker image if not present
+    subprocess.check_output(['docker', 'pull', docker_client_image], stderr=subprocess.STDOUT)
+    # Run Docker build inside Docker-in-Docker container
+    output = subprocess.check_output([
+        'docker', 'run', '--rm', '--privileged',
+        '-v', f"{os.getcwd()}:/workspace",
+        '-w', '/workspace',
+        docker_client_image,
+        'sh', '-c', f"docker buildx create --use && docker buildx build --platform linux/amd64 --no-cache --progress=plain -t {dockerImagename} -f {dockerfilePath} ./"
+    ], stderr=subprocess.STDOUT)  
     print('Docker build output:\n' + output.decode('utf-8'))
 
     # Save Docker image to a .tar file
     print('Saving Docker image file with name:', baseFilename + '.tar', '...')
-    output = subprocess.check_output(['docker', 'save', '-o', baseFilename + '.tar', dockerImagename], stderr=subprocess.STDOUT)
+    output = subprocess.check_output([
+        'docker', 'run', '--rm', '--privileged',
+        '-v', f"{os.getcwd()}:/workspace",
+        '-w', '/workspace',
+        docker_client_image,
+        'sh', '-c', f"docker save -o /workspace/{baseFilename}.tar {dockerImagename}"
+    ], stderr=subprocess.STDOUT)  
     print('Docker save output:\n' + output.decode('utf-8'))
 
     # Copy documentation file with appropriate filename

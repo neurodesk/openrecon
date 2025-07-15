@@ -80,13 +80,6 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# check for cli flag if it should ignore the docker version:
-if [[ "$1" == "--ignore-docker-version" ]]; then
-    echo "Ignoring docker version check."
-else
-    python3 ../checkDockerVersion.py
-fi
-
 # build pdf file from README.md
 if [[ "$2" == "--ignore-mdpdf" ]]; then
     echo "Ignoring mdpdf."
