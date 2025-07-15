@@ -94,26 +94,39 @@ try:
     docker_client_image = "docker:24.0-dind"
     # Pull the Docker-in-Docker image if not present
     subprocess.check_output(['docker', 'pull', docker_client_image], stderr=subprocess.STDOUT)
-    # Run Docker build inside Docker-in-Docker container
+    # Run Docker build inside Docker-in-Docker container with proper daemon startup
+    docker_build_script = f"""
+    set -e
+    # Start Docker daemon in background
+    dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
+    # Wait for Docker daemon to start
+    timeout=60
+    while ! DOCKER_HOST=unix:///var/run/docker.sock docker version >/dev/null 2>&1; do
+        sleep 2
+        timeout=$((timeout - 2))
+        if [ $timeout -le 0 ]; then
+            echo "Docker daemon failed to start"
+            exit 1
+        fi
+    done
+    echo "Docker daemon is ready"
+    # Set Docker host for all subsequent commands
+    export DOCKER_HOST=unix:///var/run/docker.sock
+    # Build the image
+    docker buildx build --platform linux/amd64 --no-cache --progress=plain -t {dockerImagename} -f {dockerfilePath} ./
+    # Save the image
+    docker save -o /workspace/{baseFilename}.tar {dockerImagename}
+    # Ensure the tar file has proper permissions
+    chmod 644 /workspace/{baseFilename}.tar
+    """
     output = subprocess.check_output([
         'docker', 'run', '--rm', '--privileged',
         '-v', f"{os.getcwd()}:/workspace",
         '-w', '/workspace',
         docker_client_image,
-        'sh', '-c', f"docker buildx create --use && docker buildx build --platform linux/amd64 --no-cache --progress=plain -t {dockerImagename} -f {dockerfilePath} ./"
+        'sh', '-c', docker_build_script
     ], stderr=subprocess.STDOUT)  
-    print('Docker build output:\n' + output.decode('utf-8'))
-
-    # Save Docker image to a .tar file
-    print('Saving Docker image file with name:', baseFilename + '.tar', '...')
-    output = subprocess.check_output([
-        'docker', 'run', '--rm', '--privileged',
-        '-v', f"{os.getcwd()}:/workspace",
-        '-w', '/workspace',
-        docker_client_image,
-        'sh', '-c', f"docker save -o /workspace/{baseFilename}.tar {dockerImagename}"
-    ], stderr=subprocess.STDOUT)  
-    print('Docker save output:\n' + output.decode('utf-8'))
+    print('Docker build and save output:\n' + output.decode('utf-8'))
 
     # Copy documentation file with appropriate filename
     print('Copying documentation to file with name:', baseFilename + '.pdf', '...')
