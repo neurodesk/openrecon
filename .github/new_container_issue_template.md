@@ -7,7 +7,7 @@ The container has been successfully build by @{{ env.GITHUB_ACTOR }}. To test th
 curl -O https://openrecon.neurodesk.org/{{ env.IMAGENAME }}.zip
 ```
  
-and copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming
+and copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming
 
 once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.
 
