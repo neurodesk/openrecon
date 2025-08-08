@@ -105,7 +105,7 @@
       "minimum": 0.1,
       "maximum": 100.0,
       "default": 5.0,
-      "unit": { "en": "ms" }
+      "unit": { "en": "mm" }
     }
   ]
 }
