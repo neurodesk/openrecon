@@ -70,7 +70,7 @@
       "information": { "en": "TE 2, the longer time." },
       "minimum": 1.0,
       "maximum": 100.0,
-      "default": 12.46,
+      "default": 12.5,
       "unit": { "en": "ms" }
     }
   ]
