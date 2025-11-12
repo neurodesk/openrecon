@@ -12,6 +12,8 @@ jobs:
   validate-json:
     runs-on: ubuntu-latest
     name: Validate OpenReconLabel.json files
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
