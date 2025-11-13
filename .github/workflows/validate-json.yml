@@ -5,7 +5,7 @@ on:
     paths:
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_*.json'
-      - 'recipes/validate_json.py'
+      - '.github/scripts/validate_recipes.py'
       - '.github/workflows/validate-json.yml'
 
 jobs:
@@ -41,8 +41,8 @@ jobs:
           echo "${{ steps.changed-files.outputs.all_changed_files }}"
           echo ""
           
-          # Run validation on changed files
-          python3 recipes/validate_json.py ${{ steps.changed-files.outputs.all_changed_files }}
+          # Run validation on changed files using build.py validation function
+          python3 .github/scripts/validate_recipes.py ${{ steps.changed-files.outputs.all_changed_files }}
           
       - name: Validate all OpenReconLabel.json files
         if: steps.changed-files.outputs.any_changed == 'false'
@@ -51,5 +51,5 @@ jobs:
           echo "Validating all OpenReconLabel.json files to ensure schema changes don't break existing files..."
           echo ""
           
-          # Run validation on all files
-          python3 recipes/validate_json.py
+          # Run validation on all files using build.py validation function
+          python3 .github/scripts/validate_recipes.py
