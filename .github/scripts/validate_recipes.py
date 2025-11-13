@@ -8,41 +8,11 @@ import sys
 import os
 import json
 import tempfile
-import jsonschema
 from pathlib import Path
 
-
-def validateJson(jsonFilePath, schemaFilePath):
-    """
-    Validate JSON file against OpenRecon schema (from build.py).
-    """
-    try:
-        # Load the JSON data from the file
-        with open(jsonFilePath, 'r') as jsonFile:
-            jsonData = json.load(jsonFile)
-
-        # Load the JSON schema from the file
-        with open(schemaFilePath, 'r') as schemaFile:
-            schemaData = json.load(schemaFile)
-
-        # Create a JSON Schema validator
-        validator = jsonschema.Draft7Validator(schemaData)
-
-        # Validate the JSON data against the schema
-        errors = list(validator.iter_errors(jsonData))
-
-        if not errors:
-            print("JSON is valid against the schema.")
-            return True
-        else:
-            print("JSON is not valid against the schema. Errors:")
-            for error in errors:
-                print(error)
-            return False
-    
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return False
+# Import validateJson from build.py
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'recipes'))
+from build import validateJson
 
 
 def validate_recipe(recipe_json_path, schema_path):
