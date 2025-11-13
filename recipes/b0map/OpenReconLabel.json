@@ -98,7 +98,7 @@
       "default": 0.5
     },
     {
-      "id": "delta_te",
+      "id": "deltaTe",
       "label": { "en": "Delta TE" },
       "type": "double",
       "information": { "en": "Delta TE" },

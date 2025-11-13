@@ -1,0 +1,55 @@
+name: Validate JSON
+
+on:
+  pull_request:
+    paths:
+      - 'recipes/**/OpenReconLabel.json'
+      - 'recipes/OpenReconSchema_*.json'
+      - '.github/scripts/validate_recipes.py'
+      - '.github/workflows/validate-json.yml'
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    name: Validate OpenReconLabel.json files
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          
+      - name: Install dependencies
+        run: |
+          pip install jsonschema
+          
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: 'recipes/**/OpenReconLabel.json'
+          
+      - name: Validate changed OpenReconLabel.json files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "Changed OpenReconLabel.json files:"
+          echo "${{ steps.changed-files.outputs.all_changed_files }}"
+          echo ""
+          
+          # Run validation on changed files using build.py validation function
+          python3 .github/scripts/validate_recipes.py ${{ steps.changed-files.outputs.all_changed_files }}
+          
+      - name: Validate all OpenReconLabel.json files
+        if: steps.changed-files.outputs.any_changed == 'false'
+        run: |
+          echo "No OpenReconLabel.json files changed, but schema or validation script changed."
+          echo "Validating all OpenReconLabel.json files to ensure schema changes don't break existing files..."
+          echo ""
+          
+          # Run validation on all files using build.py validation function
+          python3 .github/scripts/validate_recipes.py
