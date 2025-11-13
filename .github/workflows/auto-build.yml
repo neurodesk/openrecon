@@ -1,4 +1,6 @@
 name: auto-build
+permissions:
+  contents: read
 
 on:
   push:
