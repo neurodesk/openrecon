@@ -3,3 +3,6 @@
 *.tar
 __pycache__/
 *.py[cod]
+*.pdf
+.tmp*
+OpenRecon.dockerfile

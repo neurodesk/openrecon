@@ -38,7 +38,10 @@ if __name__ == '__main__':
     jsonFilePath    = 'OpenReconLabel.json'
     schemaFilePath  = '../OpenReconSchema_1.1.0.json'
     dockerfilePath  = 'OpenRecon.dockerfile'
-    baseDockerImage = os.getenv('baseDockerImage')
+    # Check if DOCKER_IMAGE_TO_USE is set (from build.sh local image check)
+    dockerImageToUse = os.getenv('DOCKER_IMAGE_TO_USE')
+    baseDockerImage = dockerImageToUse if dockerImageToUse else os.getenv('baseDockerImage')
+    useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
 
     # Write Dockerfile
     if validateJson(jsonFilePath, schemaFilePath):
@@ -77,10 +80,11 @@ if __name__ == '__main__':
         raise Exception('Could not find documentation file: ' + docsFile)
 
     # Check 7-zip exists
-    zipExe = '/usr/bin/7z'
-
-    if not os.path.isfile(zipExe):
-        raise Exception('Could not find 7-Zip executable: ' + zipExe + '\nPlease download and install 7-Zip')
+    import shutil
+    zipExe = shutil.which('7z')
+    
+    if zipExe is None:
+        raise Exception('Could not find 7-Zip executable in PATH. Please download and install 7-Zip')
 
     dockerImagename = ('OpenRecon_' + vendor + '_' + name + ':' +  'V' + version).lower()
     baseFilename    =  'OpenRecon_' + vendor + '_' + name +       '_V' + version
@@ -89,15 +93,51 @@ if __name__ == '__main__':
     import shutil
 
     try:
+        import time
+        start_time = time.time()
+        
         # Build Docker image docker buildx build --platform linux/amd64
+        print('=' * 70)
+        print('STEP 1/5: Preparing Docker image build')
+        print('=' * 70)
         print('Attempting to create Docker image with tag:', dockerImagename, '...')
+        if useLocalImage:
+            print('Using local base image:', baseDockerImage)
+            # Check if base image tar already exists to skip re-saving
+            base_image_tar = '.base_image.tar'
+            if os.path.exists(base_image_tar):
+                print(f'⚡ Using existing {base_image_tar} (skip re-save for speed)')
+            else:
+                print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
+                subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
+                print('✓ Base image saved successfully')
+        else:
+            print('Using remote base image:', baseDockerImage)
+            base_image_tar = None
+        
         # Initialize Docker-in-Docker client
         docker_client_image = "docker:24.0-dind"
-        # Pull the Docker-in-Docker image if not present
-        subprocess.check_output(['docker', 'pull', docker_client_image], stderr=subprocess.STDOUT)
+        print(f'\n🐳 Pulling DinD image {docker_client_image}...')
+        subprocess.check_output(['docker', 'pull', '--platform', 'linux/amd64', docker_client_image], stderr=subprocess.STDOUT)
+        print('✓ DinD image ready')
+        
+        # Prepare script to load base image if needed
+        load_image_cmd = ""
+        if useLocalImage and base_image_tar:
+            load_image_cmd = f"""
+        echo "📦 Loading base image from tar file... (this may take 2-3 minutes)"
+        docker load -i /workspace/{base_image_tar}
+        echo "✓ Base image loaded into DinD daemon"
+        """
+        
+        print('\n' + '=' * 70)
+        print('STEP 2/5: Starting Docker-in-Docker and building image')
+        print('=' * 70)
+        
         # Run Docker build inside Docker-in-Docker container with proper daemon startup
         docker_build_script = f"""
         set -e
+        echo "🚀 Starting Docker daemon..."
         # Start Docker daemon in background
         dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
         # Wait for Docker daemon to start
@@ -106,41 +146,82 @@ if __name__ == '__main__':
             sleep 2
             timeout=$((timeout - 2))
             if [ $timeout -le 0 ]; then
-                echo "Docker daemon failed to start"
+                echo "❌ Docker daemon failed to start"
                 exit 1
             fi
         done
-        echo "Docker daemon is ready"
+        echo "✓ Docker daemon is ready"
         # Set Docker host for all subsequent commands
         export DOCKER_HOST=unix:///var/run/docker.sock
-        # Build the image
-        docker buildx build --platform linux/amd64 --no-cache --progress=plain -t {dockerImagename} -f {dockerfilePath} ./
+        {load_image_cmd}
+        echo "🔨 Building Docker image (with layer caching)..."
+        # Build the image (removed --no-cache for speed)
+        docker buildx build --platform linux/amd64 --progress=plain -t {dockerImagename} -f {dockerfilePath} ./
+        echo "✓ Docker image built successfully"
+        echo "💾 Saving image to tar file... (this may take 2-3 minutes)"
         # Save the image
         docker save -o /workspace/{baseFilename}.tar {dockerImagename}
         # Ensure the tar file has proper permissions
         chmod 644 /workspace/{baseFilename}.tar
+        echo "✓ Image saved to {baseFilename}.tar"
         """
+        print('Running build in DinD container (showing live output)...\n')
         output = subprocess.check_output([
             'docker', 'run', '--rm', '--privileged',
+            '--platform', 'linux/amd64',
+            '--tmpfs', '/var/lib/docker:exec,size=30G',
             '-v', f"{os.getcwd()}:/workspace",
             '-w', '/workspace',
             docker_client_image,
             'sh', '-c', docker_build_script
         ], stderr=subprocess.STDOUT)  
-        print('Docker build and save output:\n' + output.decode('utf-8'))
-
+        print(output.decode('utf-8'))
+        
+        step_time = time.time() - start_time
+        print(f'\n⏱️  Build completed in {step_time:.1f} seconds')
+        
+        print('\n' + '=' * 70)
+        print('STEP 3/5: Preparing documentation')
+        print('=' * 70)
         # Copy documentation file with appropriate filename
-        print('Copying documentation to file with name:', baseFilename + '.pdf', '...')
+        print(f'📄 Copying documentation to {baseFilename}.pdf...')
         try:
             shutil.copy(docsFile, baseFilename + '.pdf')
-            print(f'File copied from {docsFile} to {baseFilename}.pdf')
+            print(f'✓ Documentation copied')
         except IOError as e:
-            print(f'An error occurred: {e}')
+            print(f'❌ Error copying documentation: {e}')
 
-        # Zip into a package
-        print('Packaging files into zip with name:', baseFilename + '.zip', '...')
-        output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
-        print('Zip packaging output:\n' + output.decode('utf-8'))
+        print('\n' + '=' * 70)
+        print('STEP 4/5: Creating final package')
+        print('=' * 70)
+        # Zip into a package (using store mode for speed)
+        print(f'📦 Packaging files into {baseFilename}.zip...')
+        print('   (Using store mode - no compression for faster packaging)')
+        output = subprocess.check_output([zipExe, 'a', '-tzip', '-mx=0', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
+        print('✓ Package created successfully')
+        
+        print('\n' + '=' * 70)
+        print('STEP 5/5: Cleanup')
+        print('=' * 70)
+        # Optionally keep base_image_tar for next build
+        keep_cache = os.getenv('KEEP_CACHE', 'true').lower() == 'true'
+        if useLocalImage and base_image_tar and os.path.exists(base_image_tar):
+            if keep_cache:
+                print(f'💾 Keeping {base_image_tar} for next build (set KEEP_CACHE=false to remove)')
+            else:
+                os.remove(base_image_tar)
+                print(f'🗑️  Removed temporary tar file: {base_image_tar}')
+        
+        total_time = time.time() - start_time
+        print('\n' + '=' * 70)
+        print(f'✅ BUILD COMPLETED SUCCESSFULLY in {total_time:.1f} seconds ({total_time/60:.1f} minutes)')
+        print('=' * 70)
+        print(f'📦 Output: {baseFilename}.zip')
+        if os.path.exists(baseFilename + '.zip'):
+            size_bytes = os.path.getsize(baseFilename + '.zip')
+            size_gb = size_bytes / (1024**3)
+            print(f'📊 Size: {size_gb:.2f} GiB')
+        print('=' * 70)
 
     except subprocess.CalledProcessError as e:
         # If the command returns a non-zero exit status, it will raise a CalledProcessError

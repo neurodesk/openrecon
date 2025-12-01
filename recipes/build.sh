@@ -67,11 +67,11 @@ if ! command -v mdpdf &> /dev/null; then
         nvm list-remote
         nvm install v22.3.0
         nvm list
-        npm install mdpdf -g
     else
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
     fi
+    npm install mdpdf -g
 fi
 
 # check docker version
@@ -89,6 +89,34 @@ fi
 
 # source tool-specific parameters
 source params.sh
+
+# Check if a local image with format ${toolName}:${version} exists
+LOCAL_IMAGE_TAG="${toolName}:${version}"
+echo "Checking if local Docker image exists: $LOCAL_IMAGE_TAG"
+if docker image inspect "$LOCAL_IMAGE_TAG" >/dev/null 2>&1; then
+    echo "Local Docker image found. Using local version: $LOCAL_IMAGE_TAG"
+    # Replace the remote image reference with local tag in baseDockerImage
+    export baseDockerImage="$LOCAL_IMAGE_TAG"
+    export DOCKER_IMAGE_TO_USE="$LOCAL_IMAGE_TAG"
+    export USE_LOCAL_IMAGE=true
+else
+    echo "Local Docker image not found. Using remote image: $baseDockerImage"
+    export DOCKER_IMAGE_TO_USE="$baseDockerImage"
+    export USE_LOCAL_IMAGE=false
+fi
+
+# Check if localDockerImage is set and exists locally (for backward compatibility)
+if [ -n "$localDockerImage" ]; then
+    echo "Checking if localDockerImage override exists: $localDockerImage"
+    if docker image inspect "$localDockerImage" >/dev/null 2>&1; then
+        echo "Local Docker image override found. Using: $localDockerImage"
+        export baseDockerImage="$localDockerImage"
+        export DOCKER_IMAGE_TO_USE="$localDockerImage"
+        export USE_LOCAL_IMAGE=true
+    fi
+fi
+
+echo "Docker image to use: $DOCKER_IMAGE_TO_USE"
 
 # replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json with $version
 # run correct sed command on MacOS
