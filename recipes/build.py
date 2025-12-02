@@ -134,11 +134,19 @@ if __name__ == '__main__':
         print('STEP 2/5: Starting Docker-in-Docker and building image')
         print('=' * 70)
         
+        # Create a unique Docker volume name for this build
+        import uuid
+        volume_name = f"docker-build-{uuid.uuid4().hex[:8]}"
+        print(f'📁 Creating temporary Docker volume: {volume_name}')
+        
+        # Create Docker volume
+        subprocess.check_output(['docker', 'volume', 'create', volume_name], stderr=subprocess.STDOUT)
+        
         # Run Docker build inside Docker-in-Docker container with proper daemon startup
         docker_build_script = f"""
         set -e
         echo "🚀 Starting Docker daemon..."
-        # Start Docker daemon in background
+        # Start Docker daemon in background - use default /var/lib/docker location
         dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
         # Wait for Docker daemon to start
         timeout=60
@@ -166,15 +174,21 @@ if __name__ == '__main__':
         echo "✓ Image saved to {baseFilename}.tar"
         """
         print('Running build in DinD container (showing live output)...\n')
-        output = subprocess.check_output([
-            'docker', 'run', '--rm', '--privileged',
-            '--platform', 'linux/amd64',
-            '--tmpfs', '/var/lib/docker:exec,size=30G',
-            '-v', f"{os.getcwd()}:/workspace",
-            '-w', '/workspace',
-            docker_client_image,
-            'sh', '-c', docker_build_script
-        ], stderr=subprocess.STDOUT)  
+        try:
+            output = subprocess.check_output([
+                'docker', 'run', '--rm', '--privileged',
+                '--platform', 'linux/amd64',
+                '-v', f"{volume_name}:/var/lib/docker",
+                '-v', f"{os.getcwd()}:/workspace",
+                '-w', '/workspace',
+                docker_client_image,
+                'sh', '-c', docker_build_script
+            ], stderr=subprocess.STDOUT)
+        finally:
+            # Clean up Docker volume
+            print(f'\n🗑️  Cleaning up temporary Docker volume: {volume_name}')
+            subprocess.run(['docker', 'volume', 'rm', '-f', volume_name], 
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  
         print(output.decode('utf-8'))
         
         step_time = time.time() - start_time
@@ -197,7 +211,7 @@ if __name__ == '__main__':
         # Zip into a package (using store mode for speed)
         print(f'📦 Packaging files into {baseFilename}.zip...')
         print('   (Using store mode - no compression for faster packaging)')
-        output = subprocess.check_output([zipExe, 'a', '-tzip', '-mx=0', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
+        output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
         print('✓ Package created successfully')
         
         print('\n' + '=' * 70)

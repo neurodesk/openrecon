@@ -138,3 +138,15 @@ echo "baseDockerImage: $baseDockerImage"
 # build zip file
 echo "Building OpenRecon file..."
 python3 ../build.py
+
+# restore VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json
+echo "Restoring VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json..."
+# run correct sed command on MacOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/$version/VERSION_WILL_BE_REPLACED_BY_SCRIPT/g" OpenReconLabel.json
+fi
+# run correct sed command on Linux
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    sed -i "s/$version/VERSION_WILL_BE_REPLACED_BY_SCRIPT/g" OpenReconLabel.json
+fi
+echo "OpenReconLabel.json restored."
