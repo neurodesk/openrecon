@@ -30,9 +30,9 @@
     "can_process_adjustment_data": false,
     "can_use_gpu": true,
     "min_count_required_gpus": 1,
-    "min_required_gpu_memory": 2048,
-    "min_required_memory": 4096,
-    "min_count_required_cpu_cores": 1,
+    "min_required_gpu_memory": 10048,
+    "min_required_memory": 40096,
+    "min_count_required_cpu_cores": 32,
     "content_qualification_type": "PRODUCT"
   },
   "parameters": [
@@ -61,6 +61,13 @@
       "label": { "en": "Fast Model" },
       "type": "boolean",
       "information": { "en": "Use a faster model for processing (less accurate)" },
+      "default": true
+    },
+    {
+      "id": "forcegpu",
+      "label": { "en": "Force GPU" },
+      "type": "boolean",
+      "information": { "en": "Force the use of GPU for processing" },
       "default": true
     },
     {
