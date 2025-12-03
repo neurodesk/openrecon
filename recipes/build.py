@@ -106,7 +106,22 @@ if __name__ == '__main__':
             # Check if base image tar already exists to skip re-saving
             base_image_tar = '.base_image.tar'
             if os.path.exists(base_image_tar):
-                print(f'⚡ Using existing {base_image_tar} (skip re-save for speed)')
+                # Prompt user whether to reuse or regenerate
+                print(f'\n⚠️  Found existing {base_image_tar}')
+                while True:
+                    response = input('Do you want to reuse it? (y/n): ').strip().lower()
+                    if response in ['y', 'yes']:
+                        print(f'⚡ Reusing existing {base_image_tar} (skip re-save for speed)')
+                        break
+                    elif response in ['n', 'no']:
+                        print(f'🗑️  Removing old {base_image_tar}')
+                        os.remove(base_image_tar)
+                        print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
+                        subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
+                        print('✓ Base image saved successfully')
+                        break
+                    else:
+                        print('Please answer "y" or "n"')
             else:
                 print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
                 subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
