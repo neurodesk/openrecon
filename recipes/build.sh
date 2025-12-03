@@ -118,6 +118,10 @@ fi
 
 echo "Docker image to use: $DOCKER_IMAGE_TO_USE"
 
+# Create a temporary backup of OpenReconLabel.json
+echo "Creating backup of OpenReconLabel.json..."
+cp OpenReconLabel.json OpenReconLabel.json.backup
+
 # replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json with $version
 # run correct sed command on MacOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -139,14 +143,7 @@ echo "baseDockerImage: $baseDockerImage"
 echo "Building OpenRecon file..."
 python3 ../build.py
 
-# restore VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json
+# restore VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json from backup
 echo "Restoring VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json..."
-# run correct sed command on MacOS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s/$version/VERSION_WILL_BE_REPLACED_BY_SCRIPT/g" OpenReconLabel.json
-fi
-# run correct sed command on Linux
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    sed -i "s/$version/VERSION_WILL_BE_REPLACED_BY_SCRIPT/g" OpenReconLabel.json
-fi
-echo "OpenReconLabel.json restored."
+mv OpenReconLabel.json.backup OpenReconLabel.json
+echo "OpenReconLabel.json restored from backup."

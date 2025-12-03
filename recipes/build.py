@@ -225,8 +225,57 @@ if __name__ == '__main__':
         print('=' * 70)
         # Zip into a package (using store mode for speed)
         print(f'📦 Packaging files into {baseFilename}.zip...')
-        print('   (Using store mode - no compression for faster packaging)')
-        output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
+        print('   (Using Deflate mode - need for OpenRecon)')
+        
+        # Get total size for progress calculation
+        tar_size = os.path.getsize(baseFilename + '.tar')
+        pdf_size = os.path.getsize(baseFilename + '.pdf')
+        total_size = tar_size + pdf_size
+        
+        # Run 7z with progress output
+        try:
+            from tqdm import tqdm
+            import threading
+            
+            # Progress bar based on estimated time (7z doesn't provide byte progress easily)
+            pbar = tqdm(total=100, desc="Compressing", unit="%", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}%')
+            
+            # Run 7z in a subprocess
+            process = subprocess.Popen(
+                [zipExe, 'a', '-tzip', '-mm=Deflate', '-bsp1', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True
+            )
+            
+            # Parse 7z progress output
+            for line in process.stdout:
+                # 7z outputs progress as percentage
+                if '%' in line and not 'Compressing' in line:
+                    try:
+                        # Extract percentage from lines like " 42%"
+                        percent = int(''.join(filter(str.isdigit, line.split('%')[0].strip())))
+                        if 0 <= percent <= 100:
+                            pbar.n = percent
+                            pbar.refresh()
+                    except (ValueError, IndexError):
+                        pass
+            
+            process.wait()
+            pbar.n = 100
+            pbar.refresh()
+            pbar.close()
+            
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, process.args)
+                
+        except ImportError:
+            # Fallback if tqdm is not available
+            print('   (Installing tqdm for progress bar...)')
+            subprocess.check_call([shutil.which('pip3'), 'install', '--quiet', 'tqdm'])
+            # Just run without progress bar this time
+            output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
+        
         print('✓ Package created successfully')
         
         print('\n' + '=' * 70)
