@@ -204,15 +204,17 @@ if __name__ == '__main__':
         # Monitor output and track tar file creation with progress bar
         output_lines = []
         tar_file_path = os.path.join(os.getcwd(), f"{baseFilename}.tar")
+        
+        # Initialize shared state variables before try block
         monitoring_tar = False
         pbar = None
+        monitor_thread = None
         
         try:
             import threading
             
             def monitor_tar_file():
                 """Monitor the growing tar file and update progress bar"""
-                nonlocal pbar
                 last_size = 0
                 while monitoring_tar:
                     if os.path.exists(tar_file_path):
@@ -224,8 +226,6 @@ if __name__ == '__main__':
                         except (OSError, IOError):
                             pass
                     time.sleep(0.2)
-            
-            monitor_thread = None
             
             for line in process.stdout:
                 output_lines.append(line)
