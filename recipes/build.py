@@ -57,7 +57,7 @@ if __name__ == '__main__':
             file.writelines('FROM ' + baseDockerImage)
             file.writelines('\n' + labelStr)
             file.writelines('\n')
-            file.writelines('CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-r", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log", "-s", "-S=/tmp/share/saved_data"]')
+            file.writelines('CMD [ "/bin/bash", "-c", "/usr/sbin/ldconfig && exec python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l=/tmp/python-ismrmrd-server.log"]')
         print('Wrote Dockerfile:', os.path.abspath(dockerfilePath))
     else:
         raise Exception('Not writing Dockerfile because JSON is not valid')
@@ -188,23 +188,94 @@ if __name__ == '__main__':
         chmod 644 /workspace/{baseFilename}.tar
         echo "✓ Image saved to {baseFilename}.tar"
         """
-        print('Running build in DinD container (showing live output)...\n')
+        print('Running build in DinD container...\n')
+        
+        # Start the Docker process
+        process = subprocess.Popen([
+            'docker', 'run', '--rm', '--privileged',
+            '--platform', 'linux/amd64',
+            '-v', f"{volume_name}:/var/lib/docker",
+            '-v', f"{os.getcwd()}:/workspace",
+            '-w', '/workspace',
+            docker_client_image,
+            'sh', '-c', docker_build_script
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
+        
+        # Monitor output and track tar file creation with progress bar
+        output_lines = []
+        tar_file_path = os.path.join(os.getcwd(), f"{baseFilename}.tar")
+        monitoring_tar = False
+        pbar = None
+        
         try:
-            output = subprocess.check_output([
-                'docker', 'run', '--rm', '--privileged',
-                '--platform', 'linux/amd64',
-                '-v', f"{volume_name}:/var/lib/docker",
-                '-v', f"{os.getcwd()}:/workspace",
-                '-w', '/workspace',
-                docker_client_image,
-                'sh', '-c', docker_build_script
-            ], stderr=subprocess.STDOUT)
+            import threading
+            
+            def monitor_tar_file():
+                """Monitor the growing tar file and update progress bar"""
+                nonlocal pbar
+                last_size = 0
+                while monitoring_tar:
+                    if os.path.exists(tar_file_path):
+                        try:
+                            current_size = os.path.getsize(tar_file_path)
+                            if current_size > last_size and pbar:
+                                pbar.update(current_size - last_size)
+                                last_size = current_size
+                        except (OSError, IOError):
+                            pass
+                    time.sleep(0.2)
+            
+            monitor_thread = None
+            
+            for line in process.stdout:
+                output_lines.append(line)
+                print(line, end='')
+                
+                # Start monitoring when we see the save message
+                if "💾 Saving image to tar file" in line and not monitoring_tar:
+                    monitoring_tar = True
+                    try:
+                        from tqdm import tqdm
+                        # Estimate size - actual size will vary but this gives a progress indicator
+                        # Use 20GB as a reasonable estimate for most images
+                        estimated_size = 20 * 1024 * 1024 * 1024
+                        pbar = tqdm(total=estimated_size, desc="Saving image", unit='B', 
+                                   unit_scale=True, unit_divisor=1024)
+                        monitor_thread = threading.Thread(target=monitor_tar_file, daemon=True)
+                        monitor_thread.start()
+                    except ImportError:
+                        pass  # If tqdm not available, just skip progress bar
+                
+                # Stop monitoring when save is complete
+                if "✓ Image saved to" in line and monitoring_tar:
+                    monitoring_tar = False
+                    if pbar:
+                        # Update to actual final size
+                        if os.path.exists(tar_file_path):
+                            final_size = os.path.getsize(tar_file_path)
+                            pbar.n = final_size
+                            pbar.total = final_size
+                        pbar.close()
+                        pbar = None
+                    if monitor_thread:
+                        monitor_thread.join(timeout=1)
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, process.args, 
+                                                   output=''.join(output_lines))
+        
         finally:
+            # Clean up progress bar if still active
+            monitoring_tar = False
+            if pbar:
+                pbar.close()
+            
             # Clean up Docker volume
             print(f'\n🗑️  Cleaning up temporary Docker volume: {volume_name}')
             subprocess.run(['docker', 'volume', 'rm', '-f', volume_name], 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  
-        print(output.decode('utf-8'))
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         step_time = time.time() - start_time
         print(f'\n⏱️  Build completed in {step_time:.1f} seconds')
@@ -232,42 +303,67 @@ if __name__ == '__main__':
         pdf_size = os.path.getsize(baseFilename + '.pdf')
         total_size = tar_size + pdf_size
         
-        # Run 7z with progress output
+        # Run 7z with progress monitoring
         try:
             from tqdm import tqdm
             import threading
             
-            # Progress bar based on estimated time (7z doesn't provide byte progress easily)
-            pbar = tqdm(total=100, desc="Compressing", unit="%", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}%')
+            zip_output_file = baseFilename + '.zip'
             
-            # Run 7z in a subprocess
+            # Remove old zip if exists
+            if os.path.exists(zip_output_file):
+                os.remove(zip_output_file)
+            
+            # Progress bar showing file sizes
+            pbar = tqdm(total=total_size, desc="Compressing", unit='B', unit_scale=True, unit_divisor=1024)
+            
+            # Flag to stop monitoring
+            stop_monitoring = threading.Event()
+            
+            def monitor_zip_size():
+                """Monitor the growing zip file size"""
+                last_size = 0
+                while not stop_monitoring.is_set():
+                    if os.path.exists(zip_output_file):
+                        try:
+                            current_size = os.path.getsize(zip_output_file)
+                            if current_size > last_size:
+                                pbar.update(current_size - last_size)
+                                last_size = current_size
+                        except (OSError, IOError):
+                            pass
+                    time.sleep(0.1)
+            
+            # Start monitoring thread
+            monitor_thread = threading.Thread(target=monitor_zip_size, daemon=True)
+            monitor_thread.start()
+            
+            # Run 7z compression
             process = subprocess.Popen(
-                [zipExe, 'a', '-tzip', '-mm=Deflate', '-bsp1', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'],
+                [zipExe, 'a', '-tzip', '-mm=Deflate', zip_output_file, baseFilename + '.tar', baseFilename + '.pdf'],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True
+                stderr=subprocess.STDOUT
             )
             
-            # Parse 7z progress output
-            for line in process.stdout:
-                # 7z outputs progress as percentage
-                if '%' in line and not 'Compressing' in line:
-                    try:
-                        # Extract percentage from lines like " 42%"
-                        percent = int(''.join(filter(str.isdigit, line.split('%')[0].strip())))
-                        if 0 <= percent <= 100:
-                            pbar.n = percent
-                            pbar.refresh()
-                    except (ValueError, IndexError):
-                        pass
-            
+            # Wait for completion
             process.wait()
-            pbar.n = 100
+            
+            # Stop monitoring
+            stop_monitoring.set()
+            monitor_thread.join(timeout=1)
+            
+            # Update to full size
+            if os.path.exists(zip_output_file):
+                final_size = os.path.getsize(zip_output_file)
+                pbar.n = min(total_size, final_size)
+            else:
+                pbar.n = total_size
             pbar.refresh()
             pbar.close()
             
             if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, process.args)
+                output = process.stdout.read().decode('utf-8') if process.stdout else ''
+                raise subprocess.CalledProcessError(process.returncode, process.args, output=output)
                 
         except ImportError:
             # Fallback if tqdm is not available

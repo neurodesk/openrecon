@@ -2,6 +2,22 @@
 set -e
 #This script will run inside the tool directory
 
+# Cleanup function to restore backup on exit (including interruptions)
+cleanup() {
+    exit_code=$?
+    if [ -f "OpenReconLabel.json.backup" ]; then
+        echo ""
+        echo "🔄 Restoring OpenReconLabel.json from backup..."
+        mv OpenReconLabel.json.backup OpenReconLabel.json
+        echo "✓ OpenReconLabel.json restored."
+    fi
+    # Exit with the original exit code
+    exit $exit_code
+}
+
+# Set trap to call cleanup on EXIT, INT (Ctrl+C), TERM, and other signals
+trap cleanup EXIT INT TERM
+
 # check and install dependencies
 if ! command -v pip3 &> /dev/null; then
     #check if on MacOS
@@ -143,7 +159,5 @@ echo "baseDockerImage: $baseDockerImage"
 echo "Building OpenRecon file..."
 python3 ../build.py
 
-# restore VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json from backup
-echo "Restoring VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json..."
-mv OpenReconLabel.json.backup OpenReconLabel.json
-echo "OpenReconLabel.json restored from backup."
+# Note: Backup restoration now handled by cleanup trap function
+# This ensures restoration even if script is interrupted

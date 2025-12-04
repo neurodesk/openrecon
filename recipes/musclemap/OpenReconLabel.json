@@ -33,7 +33,7 @@
     "min_required_gpu_memory": 10048,
     "min_required_memory": 40096,
     "min_count_required_cpu_cores": 32,
-    "content_qualification_type": "PRODUCT"
+    "content_qualification_type": "RESEARCH"
   },
   "parameters": [
     {
