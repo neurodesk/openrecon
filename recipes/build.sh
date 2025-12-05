@@ -11,6 +11,11 @@ cleanup() {
         mv OpenReconLabel.json.backup OpenReconLabel.json
         echo "✓ OpenReconLabel.json restored."
     fi
+    if [ -f "README.md.backup" ]; then
+        echo "🔄 Restoring README.md from backup..."
+        mv README.md.backup README.md
+        echo "✓ README.md restored."
+    fi
     # Exit with the original exit code
     exit $exit_code
 }
@@ -97,14 +102,37 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # build pdf file from README.md
+# source tool-specific parameters
+source params.sh
+
+# Create backups before any modifications
+echo "Creating backup of OpenReconLabel.json..."
+cp OpenReconLabel.json OpenReconLabel.json.backup
+
+if [ -f "README.md" ]; then
+    echo "Creating backup of README.md..."
+    cp README.md README.md.backup
+    
+    # Replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in README.md with $version
+    # run correct sed command on MacOS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/VERSION_WILL_BE_REPLACED_BY_SCRIPT/$version/g" README.md
+    fi
+    # run correct sed command on Linux
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sed -i "s/VERSION_WILL_BE_REPLACED_BY_SCRIPT/$version/g" README.md
+    fi
+    echo "✓ Version replaced in README.md"
+fi
+
+# Build PDF from README.md (after version replacement)
 if [[ "$2" == "--ignore-mdpdf" ]]; then
     echo "Ignoring mdpdf."
 else
-    mdpdf README.md
+    if [ -f "README.md" ]; then
+        mdpdf README.md
+    fi
 fi
-
-# source tool-specific parameters
-source params.sh
 
 # Check if a local image with format ${toolName}:${version} exists
 LOCAL_IMAGE_TAG="${toolName}:${version}"
@@ -134,11 +162,7 @@ fi
 
 echo "Docker image to use: $DOCKER_IMAGE_TO_USE"
 
-# Create a temporary backup of OpenReconLabel.json
-echo "Creating backup of OpenReconLabel.json..."
-cp OpenReconLabel.json OpenReconLabel.json.backup
-
-# replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json with $version
+# Replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json with $version
 # run correct sed command on MacOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s/VERSION_WILL_BE_REPLACED_BY_SCRIPT/$version/g" OpenReconLabel.json
@@ -147,6 +171,7 @@ fi
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     sed -i "s/VERSION_WILL_BE_REPLACED_BY_SCRIPT/$version/g" OpenReconLabel.json
 fi
+echo "✓ Version replaced in OpenReconLabel.json"
 
 echo "This is the OpenReconLabel.json file:"
 echo "----------------------------------------"
