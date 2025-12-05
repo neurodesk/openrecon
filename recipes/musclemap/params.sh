@@ -4,3 +4,5 @@
 export toolName=musclemap
 export version=2.1.1
 export baseDockerImage=vnmd/${toolName}_${version}
+# this image is build based on 
+# https://github.com/neurodesk/neurocontainers/blob/main/recipes/musclemap/build.yaml

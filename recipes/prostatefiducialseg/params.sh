@@ -3,3 +3,5 @@
 # specify the repostiory and name of the docker image: https://hub.docker.com/orgs/vnmd/repositories
 export version=7.0.0
 export baseDockerImage=vnmd/prostatefiducialseg_${version}
+# this image is build based on 
+# https://github.com/neurodesk/neurocontainers/blob/main/recipes/prostatefiducialseg/build.yaml
