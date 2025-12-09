@@ -96,6 +96,20 @@ if __name__ == '__main__':
         import time
         start_time = time.time()
         
+        # Check CUDA version in base image before building
+        print('=' * 70)
+        print('PRE-BUILD: Checking CUDA version in base image')
+        print('=' * 70)
+        print(f'Base image: {baseDockerImage}')
+        
+        # Import and run CUDA version check on base image
+        from checkCudaVersion import checkCudaVersionInContainer
+        try:
+            checkCudaVersionInContainer(baseDockerImage, maxCudaVersion="11.8")
+        except Exception as e:
+            print(f'\n❌ Base image CUDA version check failed')
+            raise
+        
         # Build Docker image docker buildx build --platform linux/amd64
         print('=' * 70)
         print('STEP 1/5: Preparing Docker image build')
@@ -146,7 +160,7 @@ if __name__ == '__main__':
         """
         
         print('\n' + '=' * 70)
-        print('STEP 2/5: Starting Docker-in-Docker and building image')
+        print('STEP 2/5: Building Docker image')
         print('=' * 70)
         
         # Create a unique Docker volume name for this build
@@ -181,6 +195,7 @@ if __name__ == '__main__':
         # Build the image (removed --no-cache for speed)
         docker buildx build --platform linux/amd64 --progress=plain -t {dockerImagename} -f {dockerfilePath} ./
         echo "✓ Docker image built successfully"
+        
         echo "💾 Saving image to tar file... (this may take 2-3 minutes)"
         # Save the image
         docker save -o /workspace/{baseFilename}.tar {dockerImagename}
@@ -225,7 +240,7 @@ if __name__ == '__main__':
                                 last_size = current_size
                         except (OSError, IOError):
                             pass
-                    time.sleep(0.2)
+                    time.sleep(5)  # Reduced polling frequency from 0.2s to 0.5s
             
             for line in process.stdout:
                 output_lines.append(line)
@@ -332,7 +347,7 @@ if __name__ == '__main__':
                                 last_size = current_size
                         except (OSError, IOError):
                             pass
-                    time.sleep(0.1)
+                    time.sleep(5)
             
             # Start monitoring thread
             monitor_thread = threading.Thread(target=monitor_zip_size, daemon=True)
@@ -400,5 +415,8 @@ if __name__ == '__main__':
     except subprocess.CalledProcessError as e:
         # If the command returns a non-zero exit status, it will raise a CalledProcessError
         print('Command failed with return code:', e.returncode)
-        print('Error output:\n' + e.output.decode('utf-8'))
+        if hasattr(e.output, 'decode'):
+            print('Error output:\n' + e.output.decode('utf-8'))
+        else:
+            print('Error output:\n' + str(e.output))
 
