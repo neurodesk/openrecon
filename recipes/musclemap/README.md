@@ -15,10 +15,9 @@ McKay MJ, Weber KA 2nd, Wesselink EO, Smith ZA, Abbott R, Anderson DB, Ashton-Ja
 
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `config` | config | choice | `musclemap` | Define the config to be executed by MRD server |
 | `sendoriginal` | Send original images | boolean | `true` | Send a copy of original unmodified images back too |
 | `fastmodel` | Fast Model | boolean | `true` | Use a faster model for processing (less accurate) |
-| `forcegpu` | Force GPU | boolean | `true` | Force the use of GPU for processing |
+| `labeltransform` | Scale labels to DICOM range | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
 | `bodyregion` | Body Region | choice | `wholebody` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `auto` | Chunk size between 5 and 200 (or 'auto') |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |

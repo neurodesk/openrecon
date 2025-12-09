@@ -51,6 +51,13 @@
       "default": true
     },
     {
+      "id": "labeltransform",
+      "label": { "en": "Label Transform" },
+      "type": "boolean",
+      "information": { "en": "3 * (label_in // 10) + (label_in % 10) " },
+      "default": true
+    },
+    {
       "id": "bodyregion",
       "label": { "en": "Body Region" },
       "type": "choice",
