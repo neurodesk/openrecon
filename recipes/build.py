@@ -309,8 +309,65 @@ if __name__ == '__main__':
         print('\n' + '=' * 70)
         print('STEP 4/5: Creating final package')
         print('=' * 70)
+        
+        # Check for USB thumb drives (macOS only)
+        output_dir = os.getcwd()
+        if shutil.which('diskutil'):  # macOS system
+            try:
+                # Get list of external volumes
+                volumes_output = subprocess.check_output(['ls', '/Volumes'], stderr=subprocess.DEVNULL).decode('utf-8')
+                volumes = [v.strip() for v in volumes_output.split('\n') if v.strip() and v.strip() != 'Macintosh HD']
+                
+                if volumes:
+                    print('\n🔍 Detected USB drive(s):')
+                    for i, vol in enumerate(volumes, 1):
+                        vol_path = os.path.join('/Volumes', vol)
+                        try:
+                            # Get disk info to check if it's removable
+                            disk_info = subprocess.check_output(['diskutil', 'info', vol_path], stderr=subprocess.DEVNULL).decode('utf-8')
+                            if 'Removable Media' in disk_info or 'External' in disk_info:
+                                # Get available space
+                                stat = os.statvfs(vol_path)
+                                free_space_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+                                print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
+                        except:
+                            pass
+                    
+                    print('\n💾 Would you like to save the output directly to a USB drive?')
+                    while True:
+                        response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
+                        if response == '':
+                            print('📁 Saving to current directory')
+                            break
+                        try:
+                            drive_idx = int(response) - 1
+                            if 0 <= drive_idx < len(volumes):
+                                selected_volume = volumes[drive_idx]
+                                output_dir = os.path.join('/Volumes', selected_volume)
+                                # Verify we can write to it
+                                test_file = os.path.join(output_dir, '.write_test')
+                                try:
+                                    with open(test_file, 'w') as f:
+                                        f.write('test')
+                                    os.remove(test_file)
+                                    print(f'✓ Will save to: {output_dir}')
+                                    break
+                                except:
+                                    print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                                    output_dir = os.getcwd()
+                                    break
+                            else:
+                                print(f'Please enter a number between 1 and {len(volumes)}, or press Enter')
+                        except ValueError:
+                            print('Please enter a valid number or press Enter')
+            except:
+                pass  # If any error, just continue with local directory
+        
         # Zip into a package (using store mode for speed)
-        print(f'📦 Packaging files into {baseFilename}.zip...')
+        zip_output_path = os.path.join(output_dir, baseFilename + '.zip')
+        print(f'📦 Packaging files into {os.path.basename(zip_output_path)}...')
+        if output_dir != os.getcwd():
+            print(f'   Target: {output_dir}')
         print('   (Using Deflate mode - need for OpenRecon)')
         
         # Get total size for progress calculation
@@ -323,7 +380,7 @@ if __name__ == '__main__':
             from tqdm import tqdm
             import threading
             
-            zip_output_file = baseFilename + '.zip'
+            zip_output_file = zip_output_path
             
             # Remove old zip if exists
             if os.path.exists(zip_output_file):
@@ -405,9 +462,9 @@ if __name__ == '__main__':
         print('\n' + '=' * 70)
         print(f'✅ BUILD COMPLETED SUCCESSFULLY in {total_time:.1f} seconds ({total_time/60:.1f} minutes)')
         print('=' * 70)
-        print(f'📦 Output: {baseFilename}.zip')
-        if os.path.exists(baseFilename + '.zip'):
-            size_bytes = os.path.getsize(baseFilename + '.zip')
+        print(f'📦 Output: {zip_output_path}')
+        if os.path.exists(zip_output_path):
+            size_bytes = os.path.getsize(zip_output_path)
             size_gb = size_bytes / (1024**3)
             print(f'📊 Size: {size_gb:.2f} GiB')
         print('=' * 70)
