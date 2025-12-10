@@ -36,6 +36,19 @@
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
+      {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "musclemap",
+          "name": { "en": "musclemap" }
+        }
+      ],
+      "default": "musclemap",
+      "information": { "en": "Define the config to be executed by MRD server" }
+    },
     {
       "id": "sendoriginal",
       "label": { "en": "Send original images" },

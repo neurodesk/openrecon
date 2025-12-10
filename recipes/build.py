@@ -318,20 +318,25 @@ if __name__ == '__main__':
                 volumes_output = subprocess.check_output(['ls', '/Volumes'], stderr=subprocess.DEVNULL).decode('utf-8')
                 volumes = [v.strip() for v in volumes_output.split('\n') if v.strip() and v.strip() != 'Macintosh HD']
                 
-                if volumes:
+                # Filter to only removable/external drives
+                usb_drives = []
+                for vol in volumes:
+                    vol_path = os.path.join('/Volumes', vol)
+                    try:
+                        # Get disk info to check if it's removable
+                        disk_info = subprocess.check_output(['diskutil', 'info', vol_path], stderr=subprocess.DEVNULL).decode('utf-8')
+                        if 'Removable Media' in disk_info or 'External' in disk_info:
+                            # Get available space
+                            stat = os.statvfs(vol_path)
+                            free_space_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+                            usb_drives.append((vol, free_space_gb))
+                    except:
+                        pass
+                
+                if usb_drives:
                     print('\n🔍 Detected USB drive(s):')
-                    for i, vol in enumerate(volumes, 1):
-                        vol_path = os.path.join('/Volumes', vol)
-                        try:
-                            # Get disk info to check if it's removable
-                            disk_info = subprocess.check_output(['diskutil', 'info', vol_path], stderr=subprocess.DEVNULL).decode('utf-8')
-                            if 'Removable Media' in disk_info or 'External' in disk_info:
-                                # Get available space
-                                stat = os.statvfs(vol_path)
-                                free_space_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-                                print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
-                        except:
-                            pass
+                    for i, (vol, free_space_gb) in enumerate(usb_drives, 1):
+                        print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
                     
                     print('\n💾 Would you like to save the output directly to a USB drive?')
                     while True:
@@ -341,8 +346,8 @@ if __name__ == '__main__':
                             break
                         try:
                             drive_idx = int(response) - 1
-                            if 0 <= drive_idx < len(volumes):
-                                selected_volume = volumes[drive_idx]
+                            if 0 <= drive_idx < len(usb_drives):
+                                selected_volume = usb_drives[drive_idx][0]
                                 output_dir = os.path.join('/Volumes', selected_volume)
                                 # Verify we can write to it
                                 test_file = os.path.join(output_dir, '.write_test')
@@ -357,7 +362,7 @@ if __name__ == '__main__':
                                     output_dir = os.getcwd()
                                     break
                             else:
-                                print(f'Please enter a number between 1 and {len(volumes)}, or press Enter')
+                                print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
                         except ValueError:
                             print('Please enter a valid number or press Enter')
             except:
@@ -373,7 +378,9 @@ if __name__ == '__main__':
         # Get total size for progress calculation
         tar_size = os.path.getsize(baseFilename + '.tar')
         pdf_size = os.path.getsize(baseFilename + '.pdf')
-        total_size = tar_size + pdf_size
+        # Estimate compressed size to be 40% smaller than tar file
+        estimated_compressed_size = int(tar_size * 0.6)
+        total_size = estimated_compressed_size + pdf_size
         
         # Run 7z with progress monitoring
         try:
@@ -449,6 +456,23 @@ if __name__ == '__main__':
         print('\n' + '=' * 70)
         print('STEP 5/5: Cleanup')
         print('=' * 70)
+        
+        # Clean up temporary tar and pdf files
+        print('🗑️  Cleaning up temporary files...')
+        try:
+            if os.path.exists(baseFilename + '.tar'):
+                os.remove(baseFilename + '.tar')
+                print(f'   Removed {baseFilename}.tar')
+        except Exception as e:
+            print(f'   Warning: Could not remove tar file: {e}')
+        
+        try:
+            if os.path.exists(baseFilename + '.pdf'):
+                os.remove(baseFilename + '.pdf')
+                print(f'   Removed {baseFilename}.pdf')
+        except Exception as e:
+            print(f'   Warning: Could not remove pdf file: {e}')
+        
         # Optionally keep base_image_tar for next build
         keep_cache = os.getenv('KEEP_CACHE', 'true').lower() == 'true'
         if useLocalImage and base_image_tar and os.path.exists(base_image_tar):
