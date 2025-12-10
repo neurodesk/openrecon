@@ -27,8 +27,8 @@ echo "[DEBUG] Done with uploading to AWS Object Storage!"
 if curl --output /dev/null --silent --head --fail "https://openrecon.neurodesk.org/${IMAGENAME}.zip"; then
     echo "[DEBUG] ${IMAGENAME}.zip was freshly build and exists now :)"
     echo "[DEBUG] cleaning up $ZIPFILE and ${ZIPFILE%.zip}.tar "
-    rm $ZIPFILE
-    rm ${ZIPFILE%.zip}.tar
+    rm -f $ZIPFILE
+    rm -f ${ZIPFILE%.zip}.tar
 else
     echo "[ERROR] ${IMAGENAME}.zip does not exist yet. Something is WRONG"
     exit 2
