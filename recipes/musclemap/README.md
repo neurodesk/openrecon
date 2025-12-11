@@ -18,6 +18,6 @@ McKay MJ, Weber KA 2nd, Wesselink EO, Smith ZA, Abbott R, Anderson DB, Ashton-Ja
 | `sendoriginal` | Send original images | boolean | `true` | Send a copy of original unmodified images back too |
 | `fastmodel` | Fast Model | boolean | `true` | Use a faster model for processing (less accurate) |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
-| `bodyregion` | Body Region | choice | `wholebody` | Select the body region for segmentation |
+| `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `auto` | Chunk size between 5 and 200 (or 'auto') |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |
