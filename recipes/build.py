@@ -156,23 +156,28 @@ if __name__ == '__main__':
             print('Using local base image:', baseDockerImage)
             # Check if base image tar already exists to skip re-saving
             base_image_tar = '.base_image.tar'
+            is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
             if os.path.exists(base_image_tar):
-                # Prompt user whether to reuse or regenerate
-                print(f'\n⚠️  Found existing {base_image_tar}')
-                while True:
-                    response = input('Do you want to reuse it? (y/n): ').strip().lower()
-                    if response in ['y', 'yes']:
-                        print(f'⚡ Reusing existing {base_image_tar} (skip re-save for speed)')
-                        break
-                    elif response in ['n', 'no']:
-                        print(f'🗑️  Removing old {base_image_tar}')
-                        os.remove(base_image_tar)
-                        print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
-                        subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
-                        print('✓ Base image saved successfully')
-                        break
-                    else:
-                        print('Please answer "y" or "n"')
+                if is_ci:
+                    # In CI, automatically reuse existing tar to save time
+                    print(f'\n🤖 CI environment detected. Reusing existing {base_image_tar}')
+                else:
+                    # Prompt user whether to reuse or regenerate
+                    print(f'\n⚠️  Found existing {base_image_tar}')
+                    while True:
+                        response = input('Do you want to reuse it? (y/n): ').strip().lower()
+                        if response in ['y', 'yes']:
+                            print(f'⚡ Reusing existing {base_image_tar} (skip re-save for speed)')
+                            break
+                        elif response in ['n', 'no']:
+                            print(f'🗑️  Removing old {base_image_tar}')
+                            os.remove(base_image_tar)
+                            print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
+                            subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
+                            print('✓ Base image saved successfully')
+                            break
+                        else:
+                            print('Please answer "y" or "n"')
             else:
                 print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
                 subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
@@ -391,33 +396,38 @@ if __name__ == '__main__':
                             output_dir = os.getcwd()
                     else:
                         # Multiple USB drives - prompt user to select
-                        print('\n💾 Would you like to save the output directly to a USB drive?')
-                        while True:
-                            response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
-                            if response == '':
-                                print('📁 Saving to current directory')
-                                break
-                            try:
-                                drive_idx = int(response) - 1
-                                if 0 <= drive_idx < len(usb_drives):
-                                    selected_volume = usb_drives[drive_idx][0]
-                                    output_dir = os.path.join('/Volumes', selected_volume)
-                                    # Verify we can write to it
-                                    test_file = os.path.join(output_dir, '.write_test')
-                                    try:
-                                        with open(test_file, 'w') as f:
-                                            f.write('test')
-                                        os.remove(test_file)
-                                        print(f'✓ Will save to: {output_dir}')
-                                        break
-                                    except:
-                                        print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
-                                        output_dir = os.getcwd()
-                                        break
-                                else:
-                                    print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
-                            except ValueError:
-                                print('Please enter a valid number or press Enter')
+                        is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
+                        if is_ci:
+                            # In CI, always save locally
+                            print('\n🤖 CI environment detected. Saving to current directory')
+                        else:
+                            print('\n💾 Would you like to save the output directly to a USB drive?')
+                            while True:
+                                response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
+                                if response == '':
+                                    print('📁 Saving to current directory')
+                                    break
+                                try:
+                                    drive_idx = int(response) - 1
+                                    if 0 <= drive_idx < len(usb_drives):
+                                        selected_volume = usb_drives[drive_idx][0]
+                                        output_dir = os.path.join('/Volumes', selected_volume)
+                                        # Verify we can write to it
+                                        test_file = os.path.join(output_dir, '.write_test')
+                                        try:
+                                            with open(test_file, 'w') as f:
+                                                f.write('test')
+                                            os.remove(test_file)
+                                            print(f'✓ Will save to: {output_dir}')
+                                            break
+                                        except:
+                                            print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                                            output_dir = os.getcwd()
+                                            break
+                                    else:
+                                        print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
+                                except ValueError:
+                                    print('Please enter a valid number or press Enter')
             except:
                 pass  # If any error, just continue with local directory
         

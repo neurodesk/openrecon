@@ -210,46 +210,53 @@ python3 ../build.py
 # This ensures restoration even if script is interrupted
 
 # Optional cleanup of build artifacts
-echo ""
-echo "🧹 Build artifacts cleanup"
-echo "The following files can be removed:"
-if [ -f "README.pdf" ]; then
-    echo "  - README.pdf"
-fi
-if [ -f "OpenRecon.dockerfile" ]; then
-    echo "  - OpenRecon.dockerfile"
-fi
-# Find the ZIP file (it follows the naming convention OpenRecon_vendor_name_Vversion.zip)
-ZIP_FILE=$(ls OpenRecon_*.zip 2>/dev/null | head -n 1)
-if [ -n "$ZIP_FILE" ]; then
-    echo "  - $ZIP_FILE"
-fi
+# Skip interactive prompts in CI/CD environments
+if [ -n "$GITHUB_ACTIONS" ] || [ -n "$CI" ]; then
+    echo ""
+    echo "🤖 CI environment detected. Skipping cleanup prompt."
+    echo "⏭️  Build artifacts retained: README.pdf, OpenRecon.dockerfile, ZIP file"
+else
+    echo ""
+    echo "🧹 Build artifacts cleanup"
+    echo "The following files can be removed:"
+    if [ -f "README.pdf" ]; then
+        echo "  - README.pdf"
+    fi
+    if [ -f "OpenRecon.dockerfile" ]; then
+        echo "  - OpenRecon.dockerfile"
+    fi
+    # Find the ZIP file (it follows the naming convention OpenRecon_vendor_name_Vversion.zip)
+    ZIP_FILE=$(ls OpenRecon_*.zip 2>/dev/null | head -n 1)
+    if [ -n "$ZIP_FILE" ]; then
+        echo "  - $ZIP_FILE"
+    fi
 
-while true; do
-    read -p "Do you want to remove these files? (y/n): " response
-    case "$response" in
-        [Yy]* )
-            if [ -f "README.pdf" ]; then
-                rm -f README.pdf
-                echo "✓ Removed README.pdf"
-            fi
-            if [ -f "OpenRecon.dockerfile" ]; then
-                rm -f OpenRecon.dockerfile
-                echo "✓ Removed OpenRecon.dockerfile"
-            fi
-            if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
-                rm -f "$ZIP_FILE"
-                echo "✓ Removed $ZIP_FILE"
-            fi
-            echo "🎉 Cleanup complete!"
-            break
-            ;;
-        [Nn]* )
-            echo "⏭️  Skipping cleanup. Files retained for reference."
-            break
-            ;;
-        * )
-            echo "Please answer y or n."
-            ;;
-    esac
-done
+    while true; do
+        read -p "Do you want to remove these files? (y/n): " response
+        case "$response" in
+            [Yy]* )
+                if [ -f "README.pdf" ]; then
+                    rm -f README.pdf
+                    echo "✓ Removed README.pdf"
+                fi
+                if [ -f "OpenRecon.dockerfile" ]; then
+                    rm -f OpenRecon.dockerfile
+                    echo "✓ Removed OpenRecon.dockerfile"
+                fi
+                if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
+                    rm -f "$ZIP_FILE"
+                    echo "✓ Removed $ZIP_FILE"
+                fi
+                echo "🎉 Cleanup complete!"
+                break
+                ;;
+            [Nn]* )
+                echo "⏭️  Skipping cleanup. Files retained for reference."
+                break
+                ;;
+            * )
+                echo "Please answer y or n."
+                ;;
+        esac
+    done
+fi
