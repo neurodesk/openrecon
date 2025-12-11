@@ -124,6 +124,29 @@ if __name__ == '__main__':
             print(f'\n❌ Base image root user check failed')
             raise
         
+        # Check README.md for PDF rendering issues
+        print('=' * 70)
+        print('PRE-BUILD: Checking README.md for PDF rendering issues')
+        print('=' * 70)
+        
+        # Import and run README check
+        from checkReadmeIssues import check_readme_file
+        readme_path = 'README.md'
+        if os.path.isfile(readme_path):
+            print(f'Checking {readme_path}...')
+            try:
+                if not check_readme_file(readme_path):
+                    print(f'\n❌ README.md has issues that need to be fixed')
+                    print('   These issues can cause blank PDFs or rendering problems.')
+                    raise Exception('README validation failed')
+                else:
+                    print(f'✅ README.md passed all checks.')
+            except Exception as e:
+                print(f'\n❌ README check failed: {e}')
+                raise
+        else:
+            print(f'⚠️  No README.md found, skipping check')
+        
         # Build Docker image docker buildx build --platform linux/amd64
         print('=' * 70)
         print('STEP 1/5: Preparing Docker image build')

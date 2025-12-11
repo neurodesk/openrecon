@@ -1,4 +1,4 @@
-# spinalcordtoolbox VERSION_WILL_BE_REPLACED_BY_SCRIPT
+# spinalcordtoolbox 7.2.0
 
 This OpenRecon tool is based on the spinalcordtoolbox Toolbox (https://github.com/spinalcordtoolbox/spinalcordtoolbox)
 
