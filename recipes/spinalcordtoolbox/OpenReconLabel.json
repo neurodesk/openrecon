@@ -57,63 +57,25 @@
       "default": true
     },
     {
-      "id": "fastmodel",
-      "label": { "en": "Fast Model" },
-      "type": "boolean",
-      "information": { "en": "Use a faster model for processing (less accurate)" },
-      "default": true
-    },
-    {
-      "id": "labeltransform",
-      "label": { "en": "Label Transform" },
-      "type": "boolean",
-      "information": { "en": "3 * (label_in // 10) + (label_in % 10) " },
-      "default": true
-    },
-    {
-      "id": "bodyregion",
-      "label": { "en": "Body Region" },
+      "id": "analysis",
+      "label": { "en": "Analysis" },
       "type": "choice",
       "values": [
         {
-          "id": "wholebody",
-          "name": { "en": "wholebody" }
+          "id": "sct_deepseg_spinalcord",
+          "name": { "en": "sct_deepseg_spinalcord" }
         },
         {
-          "id": "abdomen",
-          "name": { "en": "abdomen" }
+          "id": "sct_label_vertebrae",
+          "name": { "en": "sct_label_vertebrae" }
         },
         {
-          "id": "pelvis",
-          "name": { "en": "pelvis" }
-        },
-        {
-          "id": "thigh",
-          "name": { "en": "thigh" }
-        },
-        {
-          "id": "leg",
-          "name": { "en": "leg" }
+          "id": "sct_deepseg_lesion_sci_t2",
+          "name": { "en": "sct_deepseg_lesion_sci_t2" }
         }
       ],
-      "default": "wholebody",
-      "information": { "en": "Select the body region for segmentation" }
-    },
-    {
-      "id": "chunksize",
-      "label": { "en": "Chunk Size" },
-      "type": "string",
-      "default": "auto",
-      "information": { "en": "Chunk size between 5 and 200 (or 'auto')" }
-    },
-    {
-      "id": "spatialoverlap",
-      "label": { "en": "Spatial Overlap" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 100,
-      "default": 50,
-      "information": { "en": "Spatial overlap percentage" }
+      "default": "sct_deepseg_spinalcord",
+      "information": { "en": "Select the analysis method" }
     }
   ]
 }

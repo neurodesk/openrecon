@@ -105,6 +105,22 @@ fi
 # source tool-specific parameters
 source params.sh
 
+# Handle openrecon_version if set
+# When openrecon_version is set, use 'version' for docker operations
+# and 'openrecon_version' for OpenRecon-specific files and metadata
+if [ -n "$openrecon_version" ]; then
+    echo "🔧 openrecon_version detected: $openrecon_version"
+    echo "   Docker operations will use version: $version"
+    echo "   OpenRecon metadata will use version: $openrecon_version"
+    # Store original version for docker operations
+    docker_version="$version"
+    # Use openrecon_version for everything else
+    version="$openrecon_version"
+else
+    echo "📦 Using standard version: $version (for both Docker and OpenRecon)"
+    docker_version="$version"
+fi
+
 # Create backups before any modifications
 echo "Creating backup of OpenReconLabel.json..."
 cp OpenReconLabel.json OpenReconLabel.json.backup
@@ -134,8 +150,9 @@ else
     fi
 fi
 
-# Check if a local image with format ${toolName}:${version} exists
-LOCAL_IMAGE_TAG="${toolName}:${version}"
+# Check if a local image with format ${toolName}:${docker_version} exists
+# Note: docker_version is either the original version (when openrecon_version is set) or same as version
+LOCAL_IMAGE_TAG="${toolName}:${docker_version}"
 echo "Checking if local Docker image exists: $LOCAL_IMAGE_TAG"
 if docker image inspect "$LOCAL_IMAGE_TAG" >/dev/null 2>&1; then
     echo "Local Docker image found. Using local version: $LOCAL_IMAGE_TAG"

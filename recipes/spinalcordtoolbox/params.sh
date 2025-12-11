@@ -4,5 +4,6 @@
 export toolName=spinalcordtoolbox
 export version=7.2
 export baseDockerImage=vnmd/${toolName}_${version}
+export openrecon_version=${version}.0 #this is only necessary if tool version is not following semantic versioning
 # this image is build based on 
 # https://github.com/neurodesk/neurocontainers/blob/main/recipes/spinalcordtoolbox/build.yaml

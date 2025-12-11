@@ -13,5 +13,6 @@ run locally:
 source .venv/bin/activate
 <!-- cd recipes/THE_RECIPE_YOU_WANT_TO_BUILD e.g.:-->
 cd recipes/musclemap
+cd recipes/spinalcordtoolbox
 /bin/bash ../build.sh
 ```
