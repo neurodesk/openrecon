@@ -4,6 +4,8 @@ This OpenRecon tool is based on the MuscleMap Toolbox (https://github.com/Muscle
 
 A free and open-source software toolbox for whole-body muscle segmentation and analysis.
 
+The tool runs on Water images of a Dixon sequence and generates segmentations.
+
 We are currently developing the standardized acquisition protocol for whole-body quantitative MRI of muscle. You can access the Google doc here: https://docs.google.com/document/d/1q7AAnPEr7Rj5gb9d_mLrRnAiav1f32J-RPswvOPk5xE/edit?usp=sharing. To collaborate on the standardized acquisition protocol, please contact us: neuromuscularinsightlab@stanford.edu.
 
 When citing MuscleMap, please cite the following publication:

@@ -110,6 +110,20 @@ if __name__ == '__main__':
             print(f'\n❌ Base image CUDA version check failed')
             raise
         
+        # Check if user in base image is root
+        print('=' * 70)
+        print('PRE-BUILD: Checking user in base image')
+        print('=' * 70)
+        print(f'Base image: {baseDockerImage}')
+        
+        # Import and run root user check on base image
+        from checkRootUser import checkRootUserInContainer
+        try:
+            checkRootUserInContainer(baseDockerImage)
+        except Exception as e:
+            print(f'\n❌ Base image root user check failed')
+            raise
+        
         # Build Docker image docker buildx build --platform linux/amd64
         print('=' * 70)
         print('STEP 1/5: Preparing Docker image build')
@@ -389,7 +403,7 @@ if __name__ == '__main__':
         print(f'📦 Packaging files into {os.path.basename(zip_output_path)}...')
         if output_dir != os.getcwd():
             print(f'   Target: {output_dir}')
-        print('   (Using Deflate mode - need for OpenRecon)')
+        print('   (Using Deflate mode - needed for OpenRecon to work!)')
         
         # Get total size for progress calculation
         tar_size = os.path.getsize(baseFilename + '.tar')
