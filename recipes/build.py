@@ -338,33 +338,49 @@ if __name__ == '__main__':
                     for i, (vol, free_space_gb) in enumerate(usb_drives, 1):
                         print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
                     
-                    print('\n💾 Would you like to save the output directly to a USB drive?')
-                    while True:
-                        response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
-                        if response == '':
-                            print('📁 Saving to current directory')
-                            break
+                    # If only one USB drive, automatically select it
+                    if len(usb_drives) == 1:
+                        selected_volume = usb_drives[0][0]
+                        output_dir = os.path.join('/Volumes', selected_volume)
+                        # Verify we can write to it
+                        test_file = os.path.join(output_dir, '.write_test')
                         try:
-                            drive_idx = int(response) - 1
-                            if 0 <= drive_idx < len(usb_drives):
-                                selected_volume = usb_drives[drive_idx][0]
-                                output_dir = os.path.join('/Volumes', selected_volume)
-                                # Verify we can write to it
-                                test_file = os.path.join(output_dir, '.write_test')
-                                try:
-                                    with open(test_file, 'w') as f:
-                                        f.write('test')
-                                    os.remove(test_file)
-                                    print(f'✓ Will save to: {output_dir}')
-                                    break
-                                except:
-                                    print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
-                                    output_dir = os.getcwd()
-                                    break
-                            else:
-                                print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
-                        except ValueError:
-                            print('Please enter a valid number or press Enter')
+                            with open(test_file, 'w') as f:
+                                f.write('test')
+                            os.remove(test_file)
+                            print(f'✓ Automatically selected USB drive: {output_dir}')
+                        except:
+                            print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                            output_dir = os.getcwd()
+                    else:
+                        # Multiple USB drives - prompt user to select
+                        print('\n💾 Would you like to save the output directly to a USB drive?')
+                        while True:
+                            response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
+                            if response == '':
+                                print('📁 Saving to current directory')
+                                break
+                            try:
+                                drive_idx = int(response) - 1
+                                if 0 <= drive_idx < len(usb_drives):
+                                    selected_volume = usb_drives[drive_idx][0]
+                                    output_dir = os.path.join('/Volumes', selected_volume)
+                                    # Verify we can write to it
+                                    test_file = os.path.join(output_dir, '.write_test')
+                                    try:
+                                        with open(test_file, 'w') as f:
+                                            f.write('test')
+                                        os.remove(test_file)
+                                        print(f'✓ Will save to: {output_dir}')
+                                        break
+                                    except:
+                                        print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                                        output_dir = os.getcwd()
+                                        break
+                                else:
+                                    print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
+                            except ValueError:
+                                print('Please enter a valid number or press Enter')
             except:
                 pass  # If any error, just continue with local directory
         
