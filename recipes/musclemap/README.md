@@ -1,8 +1,6 @@
 # musclemap VERSION_WILL_BE_REPLACED_BY_SCRIPT
 
-This OpenRecon tool is based on the MuscleMap Toolbox (https://github.com/MuscleMap/MuscleMap)
-
-A free and open-source software toolbox for whole-body muscle segmentation and analysis.
+This OpenRecon tool is based on the MuscleMap Toolbox (https://github.com/MuscleMap/MuscleMap) - A free and open-source software toolbox for whole-body muscle segmentation and analysis.
 
 It runs on Water images of a Dixon sequence and generates muscle segmentations.
 
