@@ -4,7 +4,7 @@ labels: enhancement
 ---
 The container has been successfully build by @{{ env.GITHUB_ACTOR }}. To test the container, download:
 ```
-curl -O https://openrecon.neurodesk.org/{{ env.IMAGENAME }}.zip
+curl -O https://openrecon.s3.us-east-2.amazonaws.com/{{ env.IMAGENAME }}.zip
 ```
  
 and copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming

@@ -24,7 +24,7 @@ fi
 time aws s3 cp $ZIPFILE s3://openrecon/${IMAGENAME}.zip
 echo "[DEBUG] Done with uploading to AWS Object Storage!"
 
-if curl --output /dev/null --silent --head --fail "https://openrecon.neurodesk.org/${IMAGENAME}.zip"; then
+if curl --output /dev/null --silent --head --fail "https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"; then
     echo "[DEBUG] ${IMAGENAME}.zip was freshly build and exists now :)"
     echo "[DEBUG] cleaning up $ZIPFILE and ${ZIPFILE%.zip}.tar "
     rm -f $ZIPFILE

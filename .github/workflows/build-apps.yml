@@ -56,7 +56,7 @@ jobs:
         run: |
           echo "The container has been successfully build. To test the container, download and copy to host:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-          echo "curl -O https://openrecon.neurodesk.org/${IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
+          echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
           echo "#now copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming" >> $GITHUB_STEP_SUMMARY
       - name: Generate issue for new container to test and release
