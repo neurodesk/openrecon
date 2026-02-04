@@ -4,6 +4,26 @@ import json
 import jsonschema
 import base64
 import os
+import sys
+
+def ensure_tqdm_installed():
+    try:
+        import tqdm  # noqa: F401
+        return True
+    except ImportError:
+        print('   (Installing tqdm for progress bar...)')
+        import subprocess
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet', 'tqdm'])
+        except Exception as e:
+            print(f'   (tqdm install failed: {e}. Continuing without progress bar.)')
+            return False
+        try:
+            import tqdm  # noqa: F401
+            return True
+        except ImportError:
+            print('   (tqdm still unavailable. Continuing without progress bar.)')
+            return False
 
 def validateJson(jsonFilePath, schemaFilePath):
     try:
@@ -291,7 +311,7 @@ if __name__ == '__main__':
                 # Start monitoring when we see the save message
                 if "💾 Saving image to tar file" in line and not monitoring_tar:
                     monitoring_tar = True
-                    try:
+                    if ensure_tqdm_installed():
                         from tqdm import tqdm
                         # Estimate size - actual size will vary but this gives a progress indicator
                         # Use 20GB as a reasonable estimate for most images
@@ -300,7 +320,7 @@ if __name__ == '__main__':
                                    unit_scale=True, unit_divisor=1024)
                         monitor_thread = threading.Thread(target=monitor_tar_file, daemon=True)
                         monitor_thread.start()
-                    except ImportError:
+                    else:
                         pass  # If tqdm not available, just skip progress bar
                 
                 # Stop monitoring when save is complete
@@ -446,8 +466,14 @@ if __name__ == '__main__':
         total_size = estimated_compressed_size + pdf_size
         
         # Run 7z with progress monitoring
-        try:
-            from tqdm import tqdm
+        use_progress = ensure_tqdm_installed()
+        if use_progress:
+            try:
+                from tqdm import tqdm
+            except ImportError:
+                use_progress = False
+        
+        if use_progress:
             import threading
             
             zip_output_file = zip_output_path
@@ -507,10 +533,8 @@ if __name__ == '__main__':
                 output = process.stdout.read().decode('utf-8') if process.stdout else ''
                 raise subprocess.CalledProcessError(process.returncode, process.args, output=output)
                 
-        except ImportError:
+        else:
             # Fallback if tqdm is not available
-            print('   (Installing tqdm for progress bar...)')
-            subprocess.check_call([shutil.which('pip3'), 'install', '--quiet', 'tqdm'])
             # Just run without progress bar this time
             output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
         
@@ -563,4 +587,3 @@ if __name__ == '__main__':
             print('Error output:\n' + e.output.decode('utf-8'))
         else:
             print('Error output:\n' + str(e.output))
-
