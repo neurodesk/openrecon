@@ -48,6 +48,13 @@
       ],
       "default": "openreconexample",
       "information": { "en": "Define the config to be executed by MRD server" }
+    },
+    {
+      "id": "sendoriginal",
+      "label": { "en": "Send original images" },
+      "type": "boolean",
+      "information": { "en": "Send a copy of original unmodified images back too" },
+      "default": true
     }
   ]
 }
