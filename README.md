@@ -15,5 +15,8 @@ source .venv/bin/activate
 cd recipes/musclemap
 cd recipes/spinalcordtoolbox
 cd recipes/openreconexample
+# default: prefer local Docker cache first, fallback to remote image
 /bin/bash ../build.sh
+# force local Docker image cache (no registry pull)
+/bin/bash ../build.sh --local-cache
 ```

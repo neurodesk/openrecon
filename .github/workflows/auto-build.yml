@@ -13,7 +13,7 @@ on:
 jobs:
   list-apps:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.head_commit.message, 'skipci') && !contains(github.event.head_commit.message, 'SKIPCI') }}
+    if: ${{ !contains(github.event.head_commit.message, 'skipci') && !contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip-ci') }}
     outputs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
     steps:

@@ -62,6 +62,7 @@ if __name__ == '__main__':
     dockerImageToUse = os.getenv('DOCKER_IMAGE_TO_USE')
     baseDockerImage = dockerImageToUse if dockerImageToUse else os.getenv('baseDockerImage')
     useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
+    forceLocalOnly = os.getenv('FORCE_LOCAL_ONLY', 'false').lower() == 'true'
 
     # Write Dockerfile
     if validateJson(jsonFilePath, schemaFilePath):
@@ -208,9 +209,20 @@ if __name__ == '__main__':
         
         # Initialize Docker-in-Docker client
         docker_client_image = "docker:24.0-dind"
-        print(f'\n🐳 Pulling DinD image {docker_client_image}...')
-        subprocess.check_output(['docker', 'pull', '--platform', 'linux/amd64', docker_client_image], stderr=subprocess.STDOUT)
-        print('✓ DinD image ready')
+        if forceLocalOnly:
+            print(f'\n🐳 Local-only mode: checking DinD image in local cache: {docker_client_image}')
+            try:
+                subprocess.check_output(['docker', 'image', 'inspect', docker_client_image], stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError:
+                raise Exception(
+                    f"Local-only mode is enabled, but DinD image '{docker_client_image}' is not available locally.\n"
+                    f"Please preload it first (once): docker pull --platform linux/amd64 {docker_client_image}"
+                )
+            print('✓ DinD image found in local cache')
+        else:
+            print(f'\n🐳 Pulling DinD image {docker_client_image}...')
+            subprocess.check_output(['docker', 'pull', '--platform', 'linux/amd64', docker_client_image], stderr=subprocess.STDOUT)
+            print('✓ DinD image ready')
         
         # Prepare script to load base image if needed
         load_image_cmd = ""

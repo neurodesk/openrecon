@@ -2,6 +2,44 @@
 set -e
 #This script will run inside the tool directory
 
+# Command-line options
+IGNORE_MDPDF=false
+FORCE_LOCAL_CACHE=false
+
+usage() {
+    cat <<EOF
+Usage: /bin/bash ../build.sh [options]
+
+Options:
+  --ignore-mdpdf               Skip README.md -> README.pdf generation
+  --local-cache                Force using an already-cached local Docker image
+                               (no registry pull; fails if image is missing)
+  -h, --help                   Show this help message
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ignore-mdpdf)
+            IGNORE_MDPDF=true
+            shift
+            ;;
+        --local-cache)
+            FORCE_LOCAL_CACHE=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option '$1'"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
 # Cleanup function to restore backup on exit (including interruptions)
 cleanup() {
     exit_code=$?
@@ -142,7 +180,7 @@ if [ -f "README.md" ]; then
 fi
 
 # Build PDF from README.md (after version replacement)
-if [[ "$2" == "--ignore-mdpdf" ]]; then
+if [[ "$IGNORE_MDPDF" == "true" ]]; then
     echo "Ignoring mdpdf."
 else
     if [ -f "README.md" ]; then
@@ -155,31 +193,66 @@ else
     fi
 fi
 
-# Check if a local image with format ${toolName}:${docker_version} exists
-# Note: docker_version is either the original version (when openrecon_version is set) or same as version
-LOCAL_IMAGE_TAG="${toolName}:${docker_version}"
-echo "Checking if local Docker image exists: $LOCAL_IMAGE_TAG"
-if docker image inspect "$LOCAL_IMAGE_TAG" >/dev/null 2>&1; then
-    echo "Local Docker image found. Using local version: $LOCAL_IMAGE_TAG"
-    # Replace the remote image reference with local tag in baseDockerImage
+LOCAL_IMAGE_TAG=""
+CANONICAL_LOCAL_TAG=""
+
+# Prefer local "name:version" tags when available.
+# If toolName is not defined in params.sh, derive from baseDockerImage like:
+#   vnmd/vesselboost_2.0.0 -> vesselboost:2.0.0
+if [ -n "$toolName" ]; then
+    CANONICAL_LOCAL_TAG="${toolName}:${docker_version}"
+else
+    BASE_IMAGE_BASENAME="${baseDockerImage##*/}"
+    if [[ "$BASE_IMAGE_BASENAME" == *_* ]]; then
+        DERIVED_TOOL_NAME="${BASE_IMAGE_BASENAME%_*}"
+        DERIVED_TOOL_VERSION="${BASE_IMAGE_BASENAME##*_}"
+        CANONICAL_LOCAL_TAG="${DERIVED_TOOL_NAME}:${DERIVED_TOOL_VERSION}"
+    fi
+fi
+
+# Preferred local lookup order:
+# 1) explicit localDockerImage override
+# 2) canonical local name:version (tool:version)
+# 3) baseDockerImage tag itself
+if [ -n "$localDockerImage" ] && docker image inspect "$localDockerImage" >/dev/null 2>&1; then
+    LOCAL_IMAGE_TAG="$localDockerImage"
+elif [ -n "$CANONICAL_LOCAL_TAG" ] && docker image inspect "$CANONICAL_LOCAL_TAG" >/dev/null 2>&1; then
+    LOCAL_IMAGE_TAG="$CANONICAL_LOCAL_TAG"
+elif docker image inspect "$baseDockerImage" >/dev/null 2>&1; then
+    LOCAL_IMAGE_TAG="$baseDockerImage"
+fi
+
+if [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
+    if [ -z "$LOCAL_IMAGE_TAG" ]; then
+        echo "Error: --local-cache was requested, but no matching local image was found."
+        echo "Checked:"
+        if [ -n "$localDockerImage" ]; then
+            echo "  - $localDockerImage (from localDockerImage)"
+        fi
+        if [ -n "$CANONICAL_LOCAL_TAG" ]; then
+            echo "  - $CANONICAL_LOCAL_TAG (canonical local name:version)"
+        fi
+        echo "  - $baseDockerImage (from baseDockerImage)"
+        exit 1
+    fi
+
+    echo "Using local cached Docker image (forced): $LOCAL_IMAGE_TAG"
     export baseDockerImage="$LOCAL_IMAGE_TAG"
     export DOCKER_IMAGE_TO_USE="$LOCAL_IMAGE_TAG"
     export USE_LOCAL_IMAGE=true
+    export FORCE_LOCAL_ONLY=true
 else
-    echo "Local Docker image not found. Using remote image: $baseDockerImage"
-    export DOCKER_IMAGE_TO_USE="$baseDockerImage"
-    export USE_LOCAL_IMAGE=false
-fi
-
-# Check if localDockerImage is set and exists locally (for backward compatibility)
-if [ -n "$localDockerImage" ]; then
-    echo "Checking if localDockerImage override exists: $localDockerImage"
-    if docker image inspect "$localDockerImage" >/dev/null 2>&1; then
-        echo "Local Docker image override found. Using: $localDockerImage"
-        export baseDockerImage="$localDockerImage"
-        export DOCKER_IMAGE_TO_USE="$localDockerImage"
+    if [ -n "$LOCAL_IMAGE_TAG" ]; then
+        echo "Local Docker cache hit. Using local image: $LOCAL_IMAGE_TAG"
+        export baseDockerImage="$LOCAL_IMAGE_TAG"
+        export DOCKER_IMAGE_TO_USE="$LOCAL_IMAGE_TAG"
         export USE_LOCAL_IMAGE=true
+    else
+        echo "No local cache hit. Using remote image: $baseDockerImage"
+        export DOCKER_IMAGE_TO_USE="$baseDockerImage"
+        export USE_LOCAL_IMAGE=false
     fi
+    export FORCE_LOCAL_ONLY=false
 fi
 
 echo "Docker image to use: $DOCKER_IMAGE_TO_USE"
