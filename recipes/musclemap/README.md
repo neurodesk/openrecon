@@ -25,10 +25,9 @@ https://doi.org/10.3390/jimaging10110262
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `sendoriginal` | Send original images | boolean | `true` | Send a copy of original unmodified images back too |
-| `fastmodel` | Fast Model | boolean | `true` | Use a faster model for processing (less accurate) |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
 | `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
-| `chunksize` | Chunk Size | string | `auto` | Chunk size between 5 and 200 (or 'auto') |
+| `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |
 
 # Labels
@@ -42,7 +41,6 @@ For running this in Open Recon we need a reversible int16-safe mapping:
 `mapped = 3 * (original // 10) + (original % 10)`
 
 `original = 10 * (mapped // 3) + (mapped % 3)` 
-
 
 This transform is valid for labels ending in `0`, `1`, or `2`
 
