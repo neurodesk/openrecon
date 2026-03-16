@@ -1,16 +1,45 @@
-# CBSB0STATS Recipe
-**WARNING: This recipe has not yet been tested on an MRI Machine**
+# Open Recon B0map Container
+**NOTE: This container has not been tested on a brain yet**
 
-This recipe creates b0 map from a gre field map (2 magnitude images with TE1 and TE2, and a 1 phase difference image.) and calculates the mean and std of the created b0 map.
+## Outline:
++ This container is designed to work with a gradient field echo sequence with 2 magntiude images of echo times TE1 and TE2 and a phase difference image. 
+  
++ The Container constructs a B0map image from these sequences via a Brain Mask of the subject using [BET2](https://poc.vl-e.nl/distribution/manual/fsl-3.2/bet2/) and the T1 image data.
 
-cbsb0stats assumes your first scan is a gre field map, and thus will attempt to create a b0-map from the first 3 images, (assume to be 2 magnitude images and 1 phase difference image). After this it will ignore all further images and pass them through without alteration.
++ Additionally the Mean and standard deviation are calculated and displayed in the image comments as well as in the logs.
 
-## UI Parameters
-- (choice) Config:
-  - a choice selection to select cbsb0stats
-- (bool) sendoriginal:
-  - Also sends unprocessed first 3 images, (may muck up image series index and instance numbers counters)
-  - When collecting the first 3 images to create the b0map it also processes the 2 magnitude and 1 phase difference image, labelling them in **ImageProcessingHistory** with "PYTHON" and "B0MAP" as well as in **SequenceDescriptionAdditional** with "OpenRecon_cbsb0stats".
++ This is an image-to-image container
 
-- (double) Echo Time 1 and Echo Time 2:
-   - Optional to manually enter TE1 and TE2, however cbsb0stats will first attempt to collect Echo Time 1 and 2 from the dicoms themselves then resort to this parameter.
+## Config Parameters
+- **Config (choice):** There is no choice here the only option is the B0map script
+- **Number of Dilations (int):** the number of dilations performed on the Brain Mask. Dilations are performed using
+    scipy.ndimage.binary_dilation(BrainMask,iterations={Number of Dilations}) 
+    NOTE: Dilations happen before Erosions
+    - **Min:** 0 
+    - **Max:** 100
+    - **Default:** 2
+
+- **Number of Erosions (int):** the number of erosions performed on the Brain Mask. Erosions are performed using
+    scipy.ndimage.binary_erosion(BrainMask,iterations={Number of Erosions}) 
+    NOTE: Dilations happen before Erosions
+    - **Min:** 0 
+    - **Max:** 100
+    - **Default:** 3
+
+- **Fractional Intensity (double):** The fractional threshold of the [BET2](https://poc.vl-e.nl/distribution/manual/fsl-3.2/bet2/) brain mask, smaller values give larger brain outline estimates
+    - **Min:** 0.0
+    - **Max:** 1.0
+    - **Default:** 0.4
+
+- **Send Originals (boolean):** When Send Originals is True the 2 magnitude and phase difference images are sent back unmodified.
+  - **Default:** True
+
+- **TE1/TE2 (str):** These two are optional and serve as a manual backup in case the echo times of the Mag 1 and Mag 2 images cannot be found. TE1 and TE2 are in units of milliseconds and they must be entered in as "3.06" not "3,06". It is recommended to input these values if they are easily accessible in the Program Card.
+    - **TE1 Default:** "3.06"
+    - **TE2 Default:** "4.08"
+    - **Delta TE Default:** "1.02"
+
+**NOTE: These are entered as string variables if they do not follow a float convention they will be disregarded.**
+
+- **Verbose Logging (boolean):** Enables extra logging of data arrays and the B0map process steps.
+    - **Default:** False
