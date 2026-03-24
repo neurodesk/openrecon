@@ -16,7 +16,7 @@
         "udi":"(01)00860000171212(21)1.3.0",
         "safety_advices":"",
         "special_operating_instructions":"Requires a gre_field_map scan to function, returns both mag images and phase image along with B0map image with image comment of std and mean, (both do not include 0).",
-        "additional_relevant_information":"This container is currently still being testing"
+        "additional_relevant_information":"This container is currently still being testing."
   }
   },
   "reconstruction": {
