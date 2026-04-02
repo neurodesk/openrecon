@@ -53,6 +53,38 @@ def validateJson(jsonFilePath, schemaFilePath):
     except Exception as e:
         print(f"An error occurred: {e}")
 
+def ensure_dind_image_available(image_name, force_local_only):
+    import subprocess
+
+    if force_local_only:
+        print(f'\n🐳 Local-only mode: checking DinD image in local cache: {image_name}')
+        try:
+            subprocess.check_output(['docker', 'image', 'inspect', image_name], stderr=subprocess.STDOUT)
+            print('✓ DinD image found in local cache')
+            return
+        except subprocess.CalledProcessError:
+            print(f'⚠️  DinD image not found locally. Preloading {image_name}...')
+    else:
+        print(f'\n🐳 Pulling DinD image {image_name}...')
+
+    pull_cmd = ['docker', 'pull', '--platform', 'linux/amd64', image_name]
+    try:
+        subprocess.check_output(pull_cmd, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as exc:
+        docker_output = exc.output.decode('utf-8', errors='replace').strip() if exc.output else ''
+        message = (
+            f"Failed to prepare DinD image '{image_name}'.\n"
+            f"Attempted: {' '.join(pull_cmd)}"
+        )
+        if docker_output:
+            message += f"\nDocker output:\n{docker_output}"
+        raise Exception(message) from exc
+
+    if force_local_only:
+        print('✓ DinD image preloaded')
+    else:
+        print('✓ DinD image ready')
+
 if __name__ == '__main__':
     # Validate JSON file against OpenRecon schema and write Dockerfile
     jsonFilePath    = 'OpenReconLabel.json'
@@ -63,6 +95,7 @@ if __name__ == '__main__':
     baseDockerImage = dockerImageToUse if dockerImageToUse else os.getenv('baseDockerImage')
     useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
     forceLocalOnly = os.getenv('FORCE_LOCAL_ONLY', 'false').lower() == 'true'
+    keepCache = os.getenv('KEEP_CACHE', 'false').lower() == 'true'
 
     # Write Dockerfile
     if validateJson(jsonFilePath, schemaFilePath):
@@ -175,31 +208,20 @@ if __name__ == '__main__':
         print('Attempting to create Docker image with tag:', dockerImagename, '...')
         if useLocalImage:
             print('Using local base image:', baseDockerImage)
-            # Check if base image tar already exists to skip re-saving
+            # Reuse a cached base image tar only when explicitly requested.
             base_image_tar = '.base_image.tar'
             is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
             if os.path.exists(base_image_tar):
                 if is_ci:
                     # In CI, automatically reuse existing tar to save time
                     print(f'\n🤖 CI environment detected. Reusing existing {base_image_tar}')
+                elif keepCache:
+                    print(f'\n💾 Reusing existing {base_image_tar} because KEEP_CACHE=true')
                 else:
-                    # Prompt user whether to reuse or regenerate
-                    print(f'\n⚠️  Found existing {base_image_tar}')
-                    while True:
-                        response = input('Do you want to reuse it? (y/n): ').strip().lower()
-                        if response in ['y', 'yes']:
-                            print(f'⚡ Reusing existing {base_image_tar} (skip re-save for speed)')
-                            break
-                        elif response in ['n', 'no']:
-                            print(f'🗑️  Removing old {base_image_tar}')
-                            os.remove(base_image_tar)
-                            print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
-                            subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
-                            print('✓ Base image saved successfully')
-                            break
-                        else:
-                            print('Please answer "y" or "n"')
-            else:
+                    print(f'\n🗑️  Removing existing {base_image_tar} because KEEP_CACHE=false')
+                    os.remove(base_image_tar)
+
+            if not os.path.exists(base_image_tar):
                 print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
                 subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
                 print('✓ Base image saved successfully')
@@ -209,20 +231,7 @@ if __name__ == '__main__':
         
         # Initialize Docker-in-Docker client
         docker_client_image = "docker:24.0-dind"
-        if forceLocalOnly:
-            print(f'\n🐳 Local-only mode: checking DinD image in local cache: {docker_client_image}')
-            try:
-                subprocess.check_output(['docker', 'image', 'inspect', docker_client_image], stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError:
-                raise Exception(
-                    f"Local-only mode is enabled, but DinD image '{docker_client_image}' is not available locally.\n"
-                    f"Please preload it first (once): docker pull --platform linux/amd64 {docker_client_image}"
-                )
-            print('✓ DinD image found in local cache')
-        else:
-            print(f'\n🐳 Pulling DinD image {docker_client_image}...')
-            subprocess.check_output(['docker', 'pull', '--platform', 'linux/amd64', docker_client_image], stderr=subprocess.STDOUT)
-            print('✓ DinD image ready')
+        ensure_dind_image_available(docker_client_image, forceLocalOnly)
         
         # Prepare script to load base image if needed
         load_image_cmd = ""
@@ -573,10 +582,9 @@ if __name__ == '__main__':
             print(f'   Warning: Could not remove pdf file: {e}')
         
         # Optionally keep base_image_tar for next build
-        keep_cache = os.getenv('KEEP_CACHE', 'true').lower() == 'true'
         if useLocalImage and base_image_tar and os.path.exists(base_image_tar):
-            if keep_cache:
-                print(f'💾 Keeping {base_image_tar} for next build (set KEEP_CACHE=false to remove)')
+            if keepCache:
+                print(f'💾 Keeping {base_image_tar} for next build (KEEP_CACHE=true)')
             else:
                 os.remove(base_image_tar)
                 print(f'🗑️  Removed temporary tar file: {base_image_tar}')
