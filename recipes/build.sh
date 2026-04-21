@@ -5,6 +5,7 @@ set -e
 # Command-line options
 IGNORE_MDPDF=false
 FORCE_LOCAL_CACHE=false
+BUILD_PACKAGE_SELECTION=${BUILD_PACKAGE_SELECTION:-both}
 
 usage() {
     cat <<EOF
@@ -39,6 +40,51 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# When running offline with a forced local cache, allow the user to limit which
+# distributable package(s) should be created.
+if [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
+    is_ci=${GITHUB_ACTIONS:-${CI:-}}
+    if [[ -z "$is_ci" && -t 0 && -z "${BUILD_PACKAGE_SELECTION_OVERRIDE:-}" ]]; then
+        echo ""
+        echo "📦 Offline build package selection"
+        echo "  1) OpenRecon package only"
+        echo "  2) FIRE package only"
+        echo "  3) Both packages"
+        while true; do
+            read -r -p "Select package(s) to create [3]: " package_choice
+            case "${package_choice:-3}" in
+                1)
+                    BUILD_PACKAGE_SELECTION=openrecon
+                    break
+                    ;;
+                2)
+                    BUILD_PACKAGE_SELECTION=fire
+                    break
+                    ;;
+                3)
+                    BUILD_PACKAGE_SELECTION=both
+                    break
+                    ;;
+                *)
+                    echo "Please enter 1, 2, or 3."
+                    ;;
+            esac
+        done
+    fi
+fi
+
+case "$BUILD_PACKAGE_SELECTION" in
+    openrecon|fire|both)
+        ;;
+    *)
+        echo "Error: BUILD_PACKAGE_SELECTION must be one of: openrecon, fire, both"
+        exit 1
+        ;;
+esac
+
+export BUILD_PACKAGE_SELECTION
+echo "Package selection: $BUILD_PACKAGE_SELECTION"
 
 # Cleanup function to restore backup on exit (including interruptions)
 cleanup() {

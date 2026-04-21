@@ -105,6 +105,16 @@ def parse_int_env(var_name, default_value):
     return value
 
 
+def get_package_selection():
+    selection = os.getenv('BUILD_PACKAGE_SELECTION', 'both').strip().lower()
+    valid_selections = {'openrecon', 'fire', 'both'}
+    if selection not in valid_selections:
+        raise ValueError(
+            f'BUILD_PACKAGE_SELECTION must be one of {sorted(valid_selections)}, got: {selection}'
+        )
+    return selection
+
+
 def get_fire_bundle_base(vendor, name, version):
     override = os.getenv('fireBundleName')
     if override and override.strip():
@@ -280,6 +290,8 @@ def build_artifacts_in_dind(
     openrecon_tar_name,
     fire_img_name,
     fire_rootfs_tar_name,
+    create_openrecon_package,
+    create_fire_package,
     use_local_image,
     base_docker_image,
     force_local_only,
@@ -328,8 +340,16 @@ def build_artifacts_in_dind(
     fire_command_quoted = shlex.quote(fire_server_command)
     validate_default_runtime_flag = '1' if validate_default_runtime else '0'
 
+    artifact_label = 'Docker image'
+    if create_openrecon_package and create_fire_package:
+        artifact_label = 'Docker image, OpenRecon package, and FIRE chroot image'
+    elif create_openrecon_package:
+        artifact_label = 'Docker image and OpenRecon package'
+    elif create_fire_package:
+        artifact_label = 'Docker image and FIRE chroot image'
+
     print('\n' + '=' * 70)
-    print('STEP 2/6: Building Docker image and FIRE chroot image')
+    print(f'STEP 2/6: Building {artifact_label}')
     print('=' * 70)
 
     volume_name = f'docker-build-{uuid.uuid4().hex[:8]}'
@@ -370,82 +390,96 @@ def build_artifacts_in_dind(
         echo "🔨 Building Docker image..."
         docker build --platform linux/amd64 -t {docker_image_name} -f {dockerfile_path} ./
         echo "✓ Docker image built successfully"
-
-        echo "💾 Saving OpenRecon image tar..."
-        docker save -o /workspace/{openrecon_tar_name} {docker_image_name}
-        chmod 644 /workspace/{openrecon_tar_name}
-        echo "✓ Image saved to {openrecon_tar_name}"
-
-        echo "📤 Exporting container filesystem for FIRE..."
-        tmp_container="fire-export-$(date +%s)-$$"
-        docker create --name "${{tmp_container}}" {docker_image_name} >/dev/null
-        docker export -o /workspace/{fire_rootfs_tar_name} "${{tmp_container}}"
-        docker rm "${{tmp_container}}" >/dev/null
-        tmp_container=""
-        chmod 644 /workspace/{fire_rootfs_tar_name}
-        echo "✓ Container filesystem exported to {fire_rootfs_tar_name}"
-
-        echo "🧰 Installing FIRE image creation tools..."
-        apk add --no-cache e2fsprogs util-linux >/dev/null
-
-        rootfs_bytes=$(wc -c < /workspace/{fire_rootfs_tar_name})
-        img_size_mb=$(( (rootfs_bytes + 1048575) / 1048576 + {fire_free_space_mb} + 64 ))
-        if [ "$img_size_mb" -le 0 ]; then
-            echo "❌ Computed FIRE image size is invalid"
-            exit 1
+        if [ "{1 if create_openrecon_package else 0}" = "1" ]; then
+            echo "💾 Saving OpenRecon image tar..."
+            docker save -o /workspace/{openrecon_tar_name} {docker_image_name}
+            chmod 644 /workspace/{openrecon_tar_name}
+            echo "✓ Image saved to {openrecon_tar_name}"
         fi
 
-        echo "🧱 Creating FIRE chroot image ({fire_img_name}) with $img_size_mb MiB..."
-        dd if=/dev/zero of=/workspace/{fire_img_name} bs=1M count="${{img_size_mb}}" status=none
-        mke2fs -F -t ext3 /workspace/{fire_img_name} >/dev/null 2>&1
+        if [ "{1 if create_fire_package else 0}" = "1" ]; then
+            echo "📤 Exporting container filesystem for FIRE..."
+            tmp_container="fire-export-$(date +%s)-$$"
+            docker create --name "${{tmp_container}}" {docker_image_name} >/dev/null
+            docker export -o /workspace/{fire_rootfs_tar_name} "${{tmp_container}}"
+            docker rm "${{tmp_container}}" >/dev/null
+            tmp_container=""
+            chmod 644 /workspace/{fire_rootfs_tar_name}
+            echo "✓ Container filesystem exported to {fire_rootfs_tar_name}"
 
-        mount_dir=/mnt/fire_chroot_build
-        mounted=0
-        mkdir -p "${{mount_dir}}"
-        mount -o loop /workspace/{fire_img_name} "${{mount_dir}}"
-        mounted=1
+            echo "🧰 Installing FIRE image creation tools..."
+            apk add --no-cache e2fsprogs util-linux >/dev/null
 
-        echo "📦 Extracting root filesystem into FIRE chroot image..."
-        tar -xf /workspace/{fire_rootfs_tar_name} -C "${{mount_dir}}"
+            extract_dir=/tmp/fire_rootfs_extract
+            rm -rf "${{extract_dir}}"
+            mkdir -p "${{extract_dir}}"
 
-        mkdir -p "${{mount_dir}}/{startup_script_dir_rel}"
-        mkdir -p "${{mount_dir}}/tmp/share/code" "${{mount_dir}}/tmp/share/dependency" "${{mount_dir}}/tmp/share/log"
+            echo "📦 Expanding exported filesystem for sizing..."
+            tar -xf /workspace/{fire_rootfs_tar_name} -C "${{extract_dir}}"
 
-        cat > "${{mount_dir}}/{startup_script_rel}" <<'EOF'
-        #!/bin/sh
-        set -eu
-        LOG_PATH="${{1:-/tmp/share/log/python_ismrmrd_server.log}}"
-        mkdir -p "$(dirname "$LOG_PATH")"
-        export LOG_PATH
-        export FIRE_LOG_PATH="$LOG_PATH"
-        /usr/sbin/ldconfig
-        exec sh -c {fire_command_quoted}
-        EOF
-        chmod 755 "${{mount_dir}}/{startup_script_rel}"
+            rootfs_bytes=$(du -sb "${{extract_dir}}" | awk '{{print $1}}')
+            rootfs_buffer_bytes=$(( rootfs_bytes / 5 ))
+            img_size_mb=$(( (rootfs_bytes + rootfs_buffer_bytes + 1048575) / 1048576 + {fire_free_space_mb} + 128 ))
+            if [ "$img_size_mb" -le 0 ]; then
+                echo "❌ Computed FIRE image size is invalid"
+                exit 1
+            fi
 
-        echo "🔍 Validating FIRE chroot contents..."
-        if ! chroot "${{mount_dir}}" /bin/sh -c 'command -v python3 >/dev/null 2>&1'; then
-            echo "❌ FIRE image validation failed: python3 not found inside the chroot"
-            exit 1
+            echo "🧱 Creating FIRE chroot image ({fire_img_name}) with $img_size_mb MiB..."
+            echo "   Expanded rootfs size: $rootfs_bytes bytes"
+            echo "   Added sizing buffer: $rootfs_buffer_bytes bytes + {fire_free_space_mb} MiB free space"
+            dd if=/dev/zero of=/workspace/{fire_img_name} bs=1M count="${{img_size_mb}}" status=none
+            mke2fs -F -t ext3 /workspace/{fire_img_name} >/dev/null 2>&1
+
+            mount_dir=/mnt/fire_chroot_build
+            mounted=0
+            mkdir -p "${{mount_dir}}"
+            mount -o loop /workspace/{fire_img_name} "${{mount_dir}}"
+            mounted=1
+
+            echo "📦 Copying expanded root filesystem into FIRE chroot image..."
+            cp -a "${{extract_dir}}"/. "${{mount_dir}}"/
+            rm -rf "${{extract_dir}}"
+
+            mkdir -p "${{mount_dir}}/{startup_script_dir_rel}"
+            mkdir -p "${{mount_dir}}/tmp/share/code" "${{mount_dir}}/tmp/share/dependency" "${{mount_dir}}/tmp/share/log"
+
+            cat > "${{mount_dir}}/{startup_script_rel}" <<'EOF'
+            #!/bin/sh
+            set -eu
+            LOG_PATH="${{1:-/tmp/share/log/python_ismrmrd_server.log}}"
+            mkdir -p "$(dirname "$LOG_PATH")"
+            export LOG_PATH
+            export FIRE_LOG_PATH="$LOG_PATH"
+            /usr/sbin/ldconfig
+            exec sh -c {fire_command_quoted}
+            EOF
+            chmod 755 "${{mount_dir}}/{startup_script_rel}"
+
+            echo "🔍 Validating FIRE chroot contents..."
+            if ! chroot "${{mount_dir}}" /bin/sh -c 'command -v python3 >/dev/null 2>&1'; then
+                echo "❌ FIRE image validation failed: python3 not found inside the chroot"
+                exit 1
+            fi
+            if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x /usr/sbin/ldconfig'; then
+                echo "❌ FIRE image validation failed: /usr/sbin/ldconfig not found inside the chroot"
+                exit 1
+            fi
+            if [ "{validate_default_runtime_flag}" = "1" ] && ! chroot "${{mount_dir}}" /bin/sh -c 'test -f /opt/code/python-ismrmrd-server/main.py'; then
+                echo "❌ FIRE image validation failed: /opt/code/python-ismrmrd-server/main.py not found inside the chroot"
+                exit 1
+            fi
+            if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x {startup_script_path}'; then
+                echo "❌ FIRE image validation failed: generated startup script is missing or not executable"
+                exit 1
+            fi
+
+            sync
+            umount "${{mount_dir}}"
+            mounted=0
+            chmod 644 /workspace/{fire_img_name}
+            echo "✓ FIRE chroot image created at {fire_img_name}"
         fi
-        if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x /usr/sbin/ldconfig'; then
-            echo "❌ FIRE image validation failed: /usr/sbin/ldconfig not found inside the chroot"
-            exit 1
-        fi
-        if [ "{validate_default_runtime_flag}" = "1" ] && ! chroot "${{mount_dir}}" /bin/sh -c 'test -f /opt/code/python-ismrmrd-server/main.py'; then
-            echo "❌ FIRE image validation failed: /opt/code/python-ismrmrd-server/main.py not found inside the chroot"
-            exit 1
-        fi
-        if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x {startup_script_path}'; then
-            echo "❌ FIRE image validation failed: generated startup script is missing or not executable"
-            exit 1
-        fi
-
-        sync
-        umount "${{mount_dir}}"
-        mounted=0
-        chmod 644 /workspace/{fire_img_name}
-        echo "✓ FIRE chroot image created at {fire_img_name}"
         '''
     )
 
@@ -491,6 +525,9 @@ if __name__ == '__main__':
     useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
     forceLocalOnly = os.getenv('FORCE_LOCAL_ONLY', 'false').lower() == 'true'
     keepCache = os.getenv('KEEP_CACHE', 'false').lower() == 'true'
+    packageSelection = get_package_selection()
+    createOpenReconPackage = packageSelection in {'openrecon', 'both'}
+    createFirePackage = packageSelection in {'fire', 'both'}
 
     if not validateJson(jsonFilePath, schemaFilePath):
         raise Exception('Not writing Dockerfile because JSON is not valid')
@@ -529,6 +566,8 @@ if __name__ == '__main__':
 
     build_start = time.time()
     base_image_tar = None
+    openrecon_zip_output_path = None
+    fire_zip_output_path = None
 
     try:
         print('=' * 70)
@@ -564,6 +603,7 @@ if __name__ == '__main__':
         print('STEP 1/6: Preparing Docker image build')
         print('=' * 70)
         print('Attempting to create Docker image with tag:', dockerImagename, '...')
+        print(f'Package selection inside build.py: {packageSelection}')
 
         base_image_tar = build_artifacts_in_dind(
             docker_image_name=dockerImagename,
@@ -571,6 +611,8 @@ if __name__ == '__main__':
             openrecon_tar_name=openreconTarName,
             fire_img_name=fireImgName,
             fire_rootfs_tar_name=fireRootfsTarName,
+            create_openrecon_package=createOpenReconPackage,
+            create_fire_package=createFirePackage,
             use_local_image=useLocalImage,
             base_docker_image=baseDockerImage,
             force_local_only=forceLocalOnly,
@@ -597,26 +639,28 @@ if __name__ == '__main__':
         print('STEP 5/6: Creating distributable packages')
         print('=' * 70)
 
-        openrecon_zip_output_path = os.path.join(output_dir, openreconBundleBase + '.zip')
-        print(f'📦 Packaging OpenRecon bundle into {os.path.basename(openrecon_zip_output_path)}...')
-        package_with_7z(zipExe, openrecon_zip_output_path, [openreconTarName, openreconPdfName])
-        print('✓ OpenRecon package created successfully')
+        if createOpenReconPackage:
+            openrecon_zip_output_path = os.path.join(output_dir, openreconBundleBase + '.zip')
+            print(f'📦 Packaging OpenRecon bundle into {os.path.basename(openrecon_zip_output_path)}...')
+            package_with_7z(zipExe, openrecon_zip_output_path, [openreconTarName, openreconPdfName])
+            print('✓ OpenRecon package created successfully')
 
-        fire_zip_output_path = os.path.join(output_dir, fireBundleBase + '.zip')
-        fire_ini_text = create_fire_ini_template(fireImgName, startupScriptPath, fireSearchString)
-        install_text = create_fire_install_text(fireImgName)
-        with tempfile.TemporaryDirectory(dir=os.getcwd(), prefix='fire-bundle-') as stage_dir_str:
-            stage_dir = Path(stage_dir_str)
-            build_fire_bundle_stage(
-                stage_dir=stage_dir,
-                fire_img_path=Path(fireImgName),
-                fire_ini_text=fire_ini_text,
-                install_text=install_text,
-                docs_source_path=openreconPdfName,
-            )
-            print(f'📦 Packaging FIRE bundle into {os.path.basename(fire_zip_output_path)}...')
-            package_with_7z(zipExe, fire_zip_output_path, sorted(os.listdir(stage_dir)), cwd=stage_dir)
-        print('✓ FIRE package created successfully')
+        if createFirePackage:
+            fire_zip_output_path = os.path.join(output_dir, fireBundleBase + '.zip')
+            fire_ini_text = create_fire_ini_template(fireImgName, startupScriptPath, fireSearchString)
+            install_text = create_fire_install_text(fireImgName)
+            with tempfile.TemporaryDirectory(dir=os.getcwd(), prefix='fire-bundle-') as stage_dir_str:
+                stage_dir = Path(stage_dir_str)
+                build_fire_bundle_stage(
+                    stage_dir=stage_dir,
+                    fire_img_path=Path(fireImgName),
+                    fire_ini_text=fire_ini_text,
+                    install_text=install_text,
+                    docs_source_path=openreconPdfName,
+                )
+                print(f'📦 Packaging FIRE bundle into {os.path.basename(fire_zip_output_path)}...')
+                package_with_7z(zipExe, fire_zip_output_path, sorted(os.listdir(stage_dir)), cwd=stage_dir)
+            print('✓ FIRE package created successfully')
 
         print('\n' + '=' * 70)
         print('STEP 6/6: Cleanup')
@@ -642,6 +686,8 @@ if __name__ == '__main__':
         print(f'✅ BUILD COMPLETED SUCCESSFULLY in {total_time:.1f} seconds ({total_time / 60:.1f} minutes)')
         print('=' * 70)
         for label, path in [('OpenRecon', openrecon_zip_output_path), ('FIRE', fire_zip_output_path)]:
+            if not path:
+                continue
             print(f'📦 {label} Output: {path}')
             if os.path.exists(path):
                 size_bytes = os.path.getsize(path)

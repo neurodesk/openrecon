@@ -21,6 +21,9 @@ cd recipes/openreconexample
 /bin/bash ../build.sh --local-cache
 ```
 
+When using `--local-cache` for an offline build, the script now prompts for which
+artifact(s) to create: `OpenRecon`, `FIRE`, or both.
+
 Each recipe build now emits two distributable artifacts by default:
 
 - `OpenRecon_<vendor>_<name>_V<version>.zip`
