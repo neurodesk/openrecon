@@ -6,3 +6,6 @@ export version=1.3.16
 export baseDockerImage=vnmd/${toolName}_${version}
 # this image is build based on 
 # https://github.com/neurodesk/neurocontainers/blob/main/recipes/musclemap/build.yaml
+# source .venv/bin/activate
+# cd recipes/musclemap
+# /bin/bash ../build.sh --local-cache
