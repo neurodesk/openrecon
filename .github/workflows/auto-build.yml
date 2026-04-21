@@ -17,12 +17,12 @@ jobs:
     outputs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0
     - name: Find all recipe directories with changes
       id: find_changed_dirs
-      uses: tj-actions/changed-files@v46
+      uses: tj-actions/changed-files@v47
       with:
         files: "recipes/**"
         dir_names: "true"
