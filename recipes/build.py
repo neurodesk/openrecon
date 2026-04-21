@@ -444,16 +444,16 @@ def build_artifacts_in_dind(
             mkdir -p "${{mount_dir}}/{startup_script_dir_rel}"
             mkdir -p "${{mount_dir}}/tmp/share/code" "${{mount_dir}}/tmp/share/dependency" "${{mount_dir}}/tmp/share/log"
 
-            cat > "${{mount_dir}}/{startup_script_rel}" <<'EOF'
-            #!/bin/sh
-            set -eu
-            LOG_PATH="${{1:-/tmp/share/log/python_ismrmrd_server.log}}"
-            mkdir -p "$(dirname "$LOG_PATH")"
-            export LOG_PATH
-            export FIRE_LOG_PATH="$LOG_PATH"
-            /usr/sbin/ldconfig
-            exec sh -c {fire_command_quoted}
-            EOF
+            printf '%s\n' \
+                '#!/bin/sh' \
+                'set -eu' \
+                'LOG_PATH="${{1:-/tmp/share/log/python_ismrmrd_server.log}}"' \
+                'mkdir -p "$(dirname "$LOG_PATH")"' \
+                'export LOG_PATH' \
+                'export FIRE_LOG_PATH="$LOG_PATH"' \
+                '/usr/sbin/ldconfig' \
+                'exec sh -c {fire_command_quoted}' \
+                > "${{mount_dir}}/{startup_script_rel}"
             chmod 755 "${{mount_dir}}/{startup_script_rel}"
 
             echo "🔍 Validating FIRE chroot contents..."
