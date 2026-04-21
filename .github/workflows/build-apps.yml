@@ -20,6 +20,7 @@ jobs:
     outputs:
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
+      FIRE_IMAGENAME: ${{ steps.IMAGEVARS.outputs.FIRE_IMAGENAME }}
     steps:
       - uses: actions/checkout@v4
       - name: Set environment variables
@@ -35,30 +36,47 @@ jobs:
           cd recipes/$APPLICATION
           echo `which python`
           /bin/bash ../build.sh
-      - name: Set image variables
+      - name: Set artifact variables
         id: IMAGEVARS
         run: |
-          echo "finding zip file for $APPLICATION:"
-          ZIPFILE=`find ./recipes/$APPLICATION -type f -iname "OpenRecon_*_$APPLICATION_*.zip" | head -1`
-          echo "ZIPFILE: $ZIPFILE"
-          IMAGENAME=$(echo $(basename $ZIPFILE .zip))
+          echo "finding bundle files for $APPLICATION:"
+          OPENRECON_ZIPFILE=$(find "./recipes/$APPLICATION" -maxdepth 1 -type f -iname "OpenRecon_*.zip" | head -1)
+          FIRE_ZIPFILE=$(find "./recipes/$APPLICATION" -maxdepth 1 -type f -iname "FIRE_*.zip" | head -1)
+          if [ -z "$OPENRECON_ZIPFILE" ] || [ -z "$FIRE_ZIPFILE" ]; then
+            echo "Missing expected build output(s)"
+            echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE"
+            echo "FIRE_ZIPFILE=$FIRE_ZIPFILE"
+            exit 1
+          fi
+          IMAGENAME=$(basename "$OPENRECON_ZIPFILE" .zip)
+          FIRE_IMAGENAME=$(basename "$FIRE_ZIPFILE" .zip)
+          echo "OPENRECON_ZIPFILE: $OPENRECON_ZIPFILE"
+          echo "FIRE_ZIPFILE: $FIRE_ZIPFILE"
           echo "IMAGENAME: $IMAGENAME"
-          echo "ZIPFILE=$ZIPFILE" >> $GITHUB_ENV
+          echo "FIRE_IMAGENAME: $FIRE_IMAGENAME"
+          echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE" >> $GITHUB_ENV
+          echo "FIRE_ZIPFILE=$FIRE_ZIPFILE" >> $GITHUB_ENV
+          echo "ZIPFILE=$OPENRECON_ZIPFILE" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+          echo "FIRE_IMAGENAME=$FIRE_IMAGENAME" >> $GITHUB_ENV
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
+          echo "FIRE_IMAGENAME=$FIRE_IMAGENAME" >> $GITHUB_OUTPUT
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
-      - name : Upload zip file
-        run: /bin/bash .github/workflows/upload-zip.sh $ZIPFILE
+      - name : Upload zip files
+        run: /bin/bash .github/workflows/upload-zip.sh "$OPENRECON_ZIPFILE" "$FIRE_ZIPFILE"
       - name: Generate job output
         run: |
-          echo "The container has been successfully build. To test the container, download and copy to host:" >> $GITHUB_STEP_SUMMARY
+          echo "The OpenRecon and FIRE bundles were built successfully. To test them, download:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
           echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
+          echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-          echo "#now copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming" >> $GITHUB_STEP_SUMMARY
+          echo "# OpenRecon zip: copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming" >> $GITHUB_STEP_SUMMARY
+          echo "# FIRE zip: unpack and install under %CustomerIceProgs%\fire\ as described in INSTALL_FIRE.txt" >> $GITHUB_STEP_SUMMARY
       - name: Generate issue for new container to test and release
         uses: JasonEtco/create-an-issue@v2
         env: 

@@ -1,61 +1,42 @@
-
-
+import base64
 import json
 import jsonschema
-import base64
 import os
-import sys
+import shlex
+import shutil
+import subprocess
+import tempfile
+import textwrap
+import time
+import uuid
+from pathlib import Path
 
-def ensure_tqdm_installed():
-    try:
-        import tqdm  # noqa: F401
-        return True
-    except ImportError:
-        print('   (Installing tqdm for progress bar...)')
-        import subprocess
-        try:
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet', 'tqdm'])
-        except Exception as e:
-            print(f'   (tqdm install failed: {e}. Continuing without progress bar.)')
-            return False
-        try:
-            import tqdm  # noqa: F401
-            return True
-        except ImportError:
-            print('   (tqdm still unavailable. Continuing without progress bar.)')
-            return False
 
 def validateJson(jsonFilePath, schemaFilePath):
     try:
-        # Load the JSON data from the file
         with open(jsonFilePath, 'r') as jsonFile:
             jsonData = json.load(jsonFile)
 
-        # Load the JSON schema from the file
         with open(schemaFilePath, 'r') as schemaFile:
             schemaData = json.load(schemaFile)
 
-        # Create a JSON Schema validator
         validator = jsonschema.Draft7Validator(schemaData)
-
-        # Validate the JSON data against the schema
         errors = list(validator.iter_errors(jsonData))
 
         if not errors:
-            print("JSON is valid against the schema.")
+            print('JSON is valid against the schema.')
             return True
-        else:
-            print("JSON is not valid against the schema. Errors:")
-            for error in errors:
-                print(error)
-            return False
-    
+
+        print('JSON is not valid against the schema. Errors:')
+        for error in errors:
+            print(error)
+        return False
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f'An error occurred: {e}')
+        return False
+
 
 def ensure_dind_image_available(image_name, force_local_only):
-    import subprocess
-
     if force_local_only:
         print(f'\n🐳 Local-only mode: checking DinD image in local cache: {image_name}')
         try:
@@ -77,7 +58,7 @@ def ensure_dind_image_available(image_name, force_local_only):
             f"Attempted: {' '.join(pull_cmd)}"
         )
         if docker_output:
-            message += f"\nDocker output:\n{docker_output}"
+            message += f'\nDocker output:\n{docker_output}'
         raise Exception(message) from exc
 
     if force_local_only:
@@ -85,182 +66,293 @@ def ensure_dind_image_available(image_name, force_local_only):
     else:
         print('✓ DinD image ready')
 
-if __name__ == '__main__':
-    # Validate JSON file against OpenRecon schema and write Dockerfile
-    jsonFilePath    = 'OpenReconLabel.json'
-    schemaFilePath  = '../OpenReconSchema_1.1.0.json'
-    dockerfilePath  = 'OpenRecon.dockerfile'
-    # Check if DOCKER_IMAGE_TO_USE is set (from build.sh local image check)
-    dockerImageToUse = os.getenv('DOCKER_IMAGE_TO_USE')
-    baseDockerImage = dockerImageToUse if dockerImageToUse else os.getenv('baseDockerImage')
-    useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
-    forceLocalOnly = os.getenv('FORCE_LOCAL_ONLY', 'false').lower() == 'true'
-    keepCache = os.getenv('KEEP_CACHE', 'false').lower() == 'true'
 
-    # Write Dockerfile
-    if validateJson(jsonFilePath, schemaFilePath):
-        with open(jsonFilePath, 'r') as jsonFile:
-            jsonData = json.load(jsonFile)
-        jsonString = json.dumps(jsonData, indent=2)
-        encodedJson = base64.b64encode(jsonString.encode('utf-8')).decode('utf-8')
+def write_openrecon_dockerfile(base_docker_image, dockerfile_path, json_data):
+    json_string = json.dumps(json_data, indent=2)
+    encoded_json = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
+    label_name = 'com.siemens-healthineers.magneticresonance.openrecon.metadata:1.1.0'
+    label_str = f'LABEL "{label_name}"="{encoded_json}"'
 
-        with open(dockerfilePath, 'w') as file:
-            labelName = 'com.siemens-healthineers.magneticresonance.openrecon.metadata:1.1.0'
-            labelStr = 'LABEL "' + labelName + '"="' + encodedJson + '"'
+    with open(dockerfile_path, 'w') as file:
+        file.write(f'FROM {base_docker_image}\n')
+        file.write(f'{label_str}\n')
+        file.write(
+            'CMD [ "/bin/bash", "-c", '
+            '"/usr/sbin/ldconfig && exec python3 /opt/code/python-ismrmrd-server/main.py '
+            '-v -H=0.0.0.0 -p=9002 -l=/tmp/python-ismrmrd-server.log"]'
+        )
 
-            file.writelines('FROM ' + baseDockerImage)
-            file.writelines('\n' + labelStr)
-            file.writelines('\n')
-            file.writelines('CMD [ "/bin/bash", "-c", "/usr/sbin/ldconfig && exec python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l=/tmp/python-ismrmrd-server.log"]')
-        print('Wrote Dockerfile:', os.path.abspath(dockerfilePath))
-    else:
-        raise Exception('Not writing Dockerfile because JSON is not valid')
 
-    # Build Docker image, save to a .tar file, and package into a .zip file for OpenRecon
-    # The documentation must be a valid PDF!
-    # README.pdf is autogenerated from README.md, but if it should be overwritten with a dedicated docs.pdf thats's possible
+def detect_docs_file():
     if os.path.isfile('docs.pdf'):
-        docsFile = 'docs.pdf'
-    else:
-        docsFile = 'README.pdf'
+        return 'docs.pdf'
+    return 'README.pdf'
 
-    # Filename must match information contained in the JSON
-    version = jsonData['general']['version']
-    vendor  = jsonData['general']['vendor']
-    name    = jsonData['general']['name']['en']
 
-    # Check documentation file exists
-    if not os.path.isfile(docsFile):
-        raise Exception('Could not find documentation file: ' + docsFile)
-
-    # Check 7-zip exists
-    import shutil
-    zipExe = shutil.which('7z')
-    
-    if zipExe is None:
-        raise Exception('Could not find 7-Zip executable in PATH. Please download and install 7-Zip')
-
-    dockerImagename = ('OpenRecon_' + vendor + '_' + name + ':' +  'V' + version).lower()
-    baseFilename    =  'OpenRecon_' + vendor + '_' + name +       '_V' + version
-
-    import subprocess
-    import shutil
+def parse_int_env(var_name, default_value):
+    raw_value = os.getenv(var_name)
+    if raw_value is None or raw_value.strip() == '':
+        return default_value
 
     try:
-        import time
-        start_time = time.time()
-        
-        # Check CUDA version in base image before building
-        print('=' * 70)
-        print('PRE-BUILD: Checking CUDA version in base image')
-        print('=' * 70)
-        print(f'Base image: {baseDockerImage}')
-        
-        # Import and run CUDA version check on base image
-        from checkCudaVersion import checkCudaVersionInContainer
-        try:
-            checkCudaVersionInContainer(baseDockerImage, maxCudaVersion="11.8")
-        except Exception as e:
-            print(f'\n❌ Base image CUDA version check failed')
-            raise
-        
-        # Check if user in base image is root
-        print('=' * 70)
-        print('PRE-BUILD: Checking user in base image')
-        print('=' * 70)
-        print(f'Base image: {baseDockerImage}')
-        
-        # Import and run root user check on base image
-        from checkRootUser import checkRootUserInContainer
-        try:
-            checkRootUserInContainer(baseDockerImage)
-        except Exception as e:
-            print(f'\n❌ Base image root user check failed')
-            raise
-        
-        # Check README.md for PDF rendering issues
-        print('=' * 70)
-        print('PRE-BUILD: Checking README.md for PDF rendering issues')
-        print('=' * 70)
-        
-        # Import and run README check
-        from checkReadmeIssues import check_readme_file
-        readme_path = 'README.md'
-        if os.path.isfile(readme_path):
-            print(f'Checking {readme_path}...')
-            try:
-                if not check_readme_file(readme_path):
-                    print(f'\n❌ README.md has issues that need to be fixed')
-                    print('   These issues can cause blank PDFs or rendering problems.')
-                    raise Exception('README validation failed')
-                else:
-                    print(f'✅ README.md passed all checks.')
-            except Exception as e:
-                print(f'\n❌ README check failed: {e}')
-                raise
-        else:
-            print(f'⚠️  No README.md found, skipping check')
-        
-        # Build Docker image docker buildx build --platform linux/amd64
-        print('=' * 70)
-        print('STEP 1/5: Preparing Docker image build')
-        print('=' * 70)
-        print('Attempting to create Docker image with tag:', dockerImagename, '...')
-        if useLocalImage:
-            print('Using local base image:', baseDockerImage)
-            # Reuse a cached base image tar only when explicitly requested.
-            base_image_tar = '.base_image.tar'
-            is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
-            if os.path.exists(base_image_tar):
-                if is_ci:
-                    # In CI, automatically reuse existing tar to save time
-                    print(f'\n🤖 CI environment detected. Reusing existing {base_image_tar}')
-                elif keepCache:
-                    print(f'\n💾 Reusing existing {base_image_tar} because KEEP_CACHE=true')
-                else:
-                    print(f'\n🗑️  Removing existing {base_image_tar} because KEEP_CACHE=false')
-                    os.remove(base_image_tar)
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f'Environment variable {var_name} must be an integer, got: {raw_value}') from exc
 
-            if not os.path.exists(base_image_tar):
-                print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
-                subprocess.check_output(['docker', 'save', '-o', base_image_tar, baseDockerImage], stderr=subprocess.STDOUT)
-                print('✓ Base image saved successfully')
-        else:
-            print('Using remote base image:', baseDockerImage)
-            base_image_tar = None
-        
-        # Initialize Docker-in-Docker client
-        docker_client_image = "docker:24.0-dind"
-        ensure_dind_image_available(docker_client_image, forceLocalOnly)
-        
-        # Prepare script to load base image if needed
-        load_image_cmd = ""
-        if useLocalImage and base_image_tar:
-            load_image_cmd = f"""
-        echo "📦 Loading base image from tar file... (this may take 2-3 minutes)"
-        docker load -i /workspace/{base_image_tar}
-        echo "✓ Base image loaded into DinD daemon"
-        """
-        
-        print('\n' + '=' * 70)
-        print('STEP 2/5: Building Docker image')
-        print('=' * 70)
-        
-        # Create a unique Docker volume name for this build
-        import uuid
-        volume_name = f"docker-build-{uuid.uuid4().hex[:8]}"
-        print(f'📁 Creating temporary Docker volume: {volume_name}')
-        
-        # Create Docker volume
-        subprocess.check_output(['docker', 'volume', 'create', volume_name], stderr=subprocess.STDOUT)
-        
-        # Run Docker build inside Docker-in-Docker container with proper daemon startup
-        docker_build_script = f"""
-        set -e
+    if value < 0:
+        raise ValueError(f'Environment variable {var_name} must be non-negative, got: {raw_value}')
+
+    return value
+
+
+def get_fire_bundle_base(vendor, name, version):
+    override = os.getenv('fireBundleName')
+    if override and override.strip():
+        return override.strip()
+    return f'FIRE_{vendor}_{name}_V{version}'
+
+
+def get_fire_server_command():
+    override = os.getenv('fireStartupCommand')
+    if override and override.strip():
+        return override.replace('{log_path}', '$LOG_PATH')
+    return 'python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l "$LOG_PATH"'
+
+
+def determine_output_dir():
+    output_dir = os.getcwd()
+    if not shutil.which('diskutil'):
+        return output_dir
+
+    try:
+        volumes_output = subprocess.check_output(['ls', '/Volumes'], stderr=subprocess.DEVNULL).decode('utf-8')
+        volumes = [v.strip() for v in volumes_output.split('\n') if v.strip() and v.strip() != 'Macintosh HD']
+
+        usb_drives = []
+        for vol in volumes:
+            vol_path = os.path.join('/Volumes', vol)
+            try:
+                disk_info = subprocess.check_output(['diskutil', 'info', vol_path], stderr=subprocess.DEVNULL).decode('utf-8')
+                if 'Removable Media' in disk_info or 'External' in disk_info:
+                    stat = os.statvfs(vol_path)
+                    free_space_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
+                    usb_drives.append((vol, free_space_gb))
+            except Exception:
+                continue
+
+        if not usb_drives:
+            return output_dir
+
+        print('\n🔍 Detected USB drive(s):')
+        for i, (vol, free_space_gb) in enumerate(usb_drives, 1):
+            print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
+
+        if len(usb_drives) == 1:
+            selected_volume = usb_drives[0][0]
+            output_dir = os.path.join('/Volumes', selected_volume)
+            test_file = os.path.join(output_dir, '.write_test')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                print(f'✓ Automatically selected USB drive: {output_dir}')
+            except Exception:
+                print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                output_dir = os.getcwd()
+            return output_dir
+
+        is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
+        if is_ci:
+            print('\n🤖 CI environment detected. Saving to current directory')
+            return output_dir
+
+        print('\n💾 Would you like to save the output directly to a USB drive?')
+        while True:
+            response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
+            if response == '':
+                print('📁 Saving to current directory')
+                return output_dir
+
+            try:
+                drive_idx = int(response) - 1
+                if 0 <= drive_idx < len(usb_drives):
+                    selected_volume = usb_drives[drive_idx][0]
+                    output_dir = os.path.join('/Volumes', selected_volume)
+                    test_file = os.path.join(output_dir, '.write_test')
+                    try:
+                        with open(test_file, 'w') as f:
+                            f.write('test')
+                        os.remove(test_file)
+                        print(f'✓ Will save to: {output_dir}')
+                        return output_dir
+                    except Exception:
+                        print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
+                        return os.getcwd()
+
+                print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
+            except ValueError:
+                print('Please enter a valid number or press Enter')
+    except Exception:
+        return output_dir
+
+
+def package_with_7z(zip_exe, zip_output_path, inputs, cwd=None):
+    if os.path.exists(zip_output_path):
+        os.remove(zip_output_path)
+
+    cmd = [zip_exe, 'a', '-tzip', '-mm=Deflate', zip_output_path]
+    cmd.extend(inputs)
+    subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT)
+
+
+def create_fire_ini_template(fire_img_name, startup_script_path, fire_search_string):
+    return textwrap.dedent(
+        f'''\
+        ; FIRE chroot configuration template generated by neurorecon.
+        ; Merge this [chroot] section into your FIRE ini file or adapt as needed.
+        [chroot]
+        start_chroot=true
+        chroot_image_path=/opt/medcom/MriCustomer/ice/fire/chroot
+        chroot_image_name={fire_img_name}
+        chroot_command={startup_script_path} /tmp/share/log/python_ismrmrd_server_`date '+%Y%m%d_%H%M%S'`.log
+        chroot_search_string={fire_search_string}
+        chroot_stop_after_finish=true
+        chroot_allowable_residual_memory_usage=128
+        '''
+    )
+
+
+def create_fire_install_text(fire_img_name):
+    return textwrap.dedent(
+        f'''\
+        FIRE Installation Notes
+        =======================
+
+        This bundle contains a FIRE-compatible chroot image generated from the matching OpenRecon Docker image.
+
+        Files
+        -----
+        - `{fire_img_name}`: Copy to `%CustomerIceProgs%\\fire\\chroot\\`
+        - `fire.ini.template`: Merge into `%CustomerIceProgs%\\fire\\wip_070_fire_fire.ini`
+          or the FIRE ini file used by your workflow
+        - `share\\code`, `share\\dependency`, `share\\log`: Optional starter folders for
+          `%CustomerIceProgs%\\fire\\share\\`
+        - The included PDF is the recipe/operator documentation
+
+        Typical scanner-side locations
+        ------------------------------
+        - `%CustomerIceProgs%\\fire\\chroot\\{fire_img_name}`
+        - `%CustomerIceProgs%\\fire\\share\\code\\`
+        - `%CustomerIceProgs%\\fire\\share\\dependency\\`
+        - `%CustomerIceProgs%\\fire\\share\\log\\`
+
+        Notes
+        -----
+        - The generated chroot startup script is inside the image at `/usr/local/bin/start-fire-openrecon.sh`
+        - FIRE mounts `%CustomerIceProgs%\\fire\\share\\` inside the chroot as `/tmp/share/`
+        - Unmount or stop the FIRE chroot service before replacing an installed `.img` on the scanner host
+        '''
+    )
+
+
+def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_text, install_text, docs_source_path):
+    share_dir = stage_dir / 'share'
+    (share_dir / 'code').mkdir(parents=True, exist_ok=True)
+    (share_dir / 'dependency').mkdir(parents=True, exist_ok=True)
+    (share_dir / 'log').mkdir(parents=True, exist_ok=True)
+
+    for rel_path, message in {
+        Path('share/code/PLACEHOLDER.txt'): 'Optional synchronized FIRE source files can be placed here.\n',
+        Path('share/dependency/PLACEHOLDER.txt'): 'Dependent measurement outputs can be placed here.\n',
+        Path('share/log/PLACEHOLDER.txt'): 'FIRE runtime logs can be written here.\n',
+    }.items():
+        (stage_dir / rel_path).write_text(message)
+
+    (stage_dir / 'fire.ini.template').write_text(fire_ini_text)
+    (stage_dir / 'INSTALL_FIRE.txt').write_text(install_text)
+    shutil.copy2(fire_img_path, stage_dir / fire_img_path.name)
+    shutil.copy2(docs_source_path, stage_dir / Path(docs_source_path).name)
+
+
+def build_artifacts_in_dind(
+    docker_image_name,
+    dockerfile_path,
+    openrecon_tar_name,
+    fire_img_name,
+    fire_rootfs_tar_name,
+    use_local_image,
+    base_docker_image,
+    force_local_only,
+    keep_cache,
+    fire_free_space_mb,
+    fire_server_command,
+    startup_script_path,
+    validate_default_runtime,
+):
+    base_image_tar = None
+    if use_local_image:
+        print('Using local base image:', base_docker_image)
+        base_image_tar = '.base_image.tar'
+        is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
+        if os.path.exists(base_image_tar):
+            if is_ci:
+                print(f'\n🤖 CI environment detected. Reusing existing {base_image_tar}')
+            elif keep_cache:
+                print(f'\n💾 Reusing existing {base_image_tar} because KEEP_CACHE=true')
+            else:
+                print(f'\n🗑️  Removing existing {base_image_tar} because KEEP_CACHE=false')
+                os.remove(base_image_tar)
+
+        if not os.path.exists(base_image_tar):
+            print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
+            subprocess.check_output(['docker', 'save', '-o', base_image_tar, base_docker_image], stderr=subprocess.STDOUT)
+            print('✓ Base image saved successfully')
+    else:
+        print('Using remote base image:', base_docker_image)
+
+    docker_client_image = 'docker:24.0-dind'
+    ensure_dind_image_available(docker_client_image, force_local_only)
+
+    load_image_cmd = ''
+    if use_local_image and base_image_tar:
+        load_image_cmd = textwrap.dedent(
+            f'''\
+            echo "📦 Loading base image from tar file... (this may take 2-3 minutes)"
+            docker load -i /workspace/{base_image_tar}
+            echo "✓ Base image loaded into DinD daemon"
+            '''
+        )
+
+    startup_script_rel = startup_script_path.lstrip('/')
+    startup_script_dir_rel = os.path.dirname(startup_script_rel)
+    fire_command_quoted = shlex.quote(fire_server_command)
+    validate_default_runtime_flag = '1' if validate_default_runtime else '0'
+
+    print('\n' + '=' * 70)
+    print('STEP 2/6: Building Docker image and FIRE chroot image')
+    print('=' * 70)
+
+    volume_name = f'docker-build-{uuid.uuid4().hex[:8]}'
+    print(f'📁 Creating temporary Docker volume: {volume_name}')
+    subprocess.check_output(['docker', 'volume', 'create', volume_name], stderr=subprocess.STDOUT)
+
+    docker_build_script = textwrap.dedent(
+        f'''\
+        set -eu
+
+        cleanup() {{
+            if command -v mountpoint >/dev/null 2>&1 && [ "${{mounted:-0}}" -eq 1 ] && mountpoint -q "${{mount_dir}}"; then
+                umount "${{mount_dir}}" || true
+            fi
+            if [ -n "${{tmp_container:-}}" ]; then
+                docker rm -f "${{tmp_container}}" >/dev/null 2>&1 || true
+            fi
+        }}
+        trap cleanup EXIT
+
         echo "🚀 Starting Docker daemon..."
-        # Start Docker daemon in background - use default /var/lib/docker location
         dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
-        # Wait for Docker daemon to start
+
         timeout=60
         while ! DOCKER_HOST=unix:///var/run/docker.sock docker version >/dev/null 2>&1; do
             sleep 2
@@ -270,340 +362,300 @@ if __name__ == '__main__':
                 exit 1
             fi
         done
+
         echo "✓ Docker daemon is ready"
-        # Set Docker host for all subsequent commands
         export DOCKER_HOST=unix:///var/run/docker.sock
         {load_image_cmd}
-        echo "🔨 Building Docker image (with layer caching)..."
-        # Build the image (removed --no-cache for speed)
-        docker buildx build --platform linux/amd64 --progress=plain -t {dockerImagename} -f {dockerfilePath} ./
+
+        echo "🔨 Building Docker image..."
+        docker build --platform linux/amd64 -t {docker_image_name} -f {dockerfile_path} ./
         echo "✓ Docker image built successfully"
-        
-        echo "💾 Saving image to tar file... (this may take 2-3 minutes)"
-        # Save the image
-        docker save -o /workspace/{baseFilename}.tar {dockerImagename}
-        # Ensure the tar file has proper permissions
-        chmod 644 /workspace/{baseFilename}.tar
-        echo "✓ Image saved to {baseFilename}.tar"
-        """
-        print('Running build in DinD container...\n')
-        
-        # Start the Docker process
-        process = subprocess.Popen([
+
+        echo "💾 Saving OpenRecon image tar..."
+        docker save -o /workspace/{openrecon_tar_name} {docker_image_name}
+        chmod 644 /workspace/{openrecon_tar_name}
+        echo "✓ Image saved to {openrecon_tar_name}"
+
+        echo "📤 Exporting container filesystem for FIRE..."
+        tmp_container="fire-export-$(date +%s)-$$"
+        docker create --name "${{tmp_container}}" {docker_image_name} >/dev/null
+        docker export -o /workspace/{fire_rootfs_tar_name} "${{tmp_container}}"
+        docker rm "${{tmp_container}}" >/dev/null
+        tmp_container=""
+        chmod 644 /workspace/{fire_rootfs_tar_name}
+        echo "✓ Container filesystem exported to {fire_rootfs_tar_name}"
+
+        echo "🧰 Installing FIRE image creation tools..."
+        apk add --no-cache e2fsprogs util-linux >/dev/null
+
+        rootfs_bytes=$(wc -c < /workspace/{fire_rootfs_tar_name})
+        img_size_mb=$(( (rootfs_bytes + 1048575) / 1048576 + {fire_free_space_mb} + 64 ))
+        if [ "$img_size_mb" -le 0 ]; then
+            echo "❌ Computed FIRE image size is invalid"
+            exit 1
+        fi
+
+        echo "🧱 Creating FIRE chroot image ({fire_img_name}) with $img_size_mb MiB..."
+        dd if=/dev/zero of=/workspace/{fire_img_name} bs=1M count="${{img_size_mb}}" status=none
+        mke2fs -F -t ext3 /workspace/{fire_img_name} >/dev/null 2>&1
+
+        mount_dir=/mnt/fire_chroot_build
+        mounted=0
+        mkdir -p "${{mount_dir}}"
+        mount -o loop /workspace/{fire_img_name} "${{mount_dir}}"
+        mounted=1
+
+        echo "📦 Extracting root filesystem into FIRE chroot image..."
+        tar -xf /workspace/{fire_rootfs_tar_name} -C "${{mount_dir}}"
+
+        mkdir -p "${{mount_dir}}/{startup_script_dir_rel}"
+        mkdir -p "${{mount_dir}}/tmp/share/code" "${{mount_dir}}/tmp/share/dependency" "${{mount_dir}}/tmp/share/log"
+
+        cat > "${{mount_dir}}/{startup_script_rel}" <<'EOF'
+        #!/bin/sh
+        set -eu
+        LOG_PATH="${{1:-/tmp/share/log/python_ismrmrd_server.log}}"
+        mkdir -p "$(dirname "$LOG_PATH")"
+        export LOG_PATH
+        export FIRE_LOG_PATH="$LOG_PATH"
+        /usr/sbin/ldconfig
+        exec sh -c {fire_command_quoted}
+        EOF
+        chmod 755 "${{mount_dir}}/{startup_script_rel}"
+
+        echo "🔍 Validating FIRE chroot contents..."
+        if ! chroot "${{mount_dir}}" /bin/sh -c 'command -v python3 >/dev/null 2>&1'; then
+            echo "❌ FIRE image validation failed: python3 not found inside the chroot"
+            exit 1
+        fi
+        if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x /usr/sbin/ldconfig'; then
+            echo "❌ FIRE image validation failed: /usr/sbin/ldconfig not found inside the chroot"
+            exit 1
+        fi
+        if [ "{validate_default_runtime_flag}" = "1" ] && ! chroot "${{mount_dir}}" /bin/sh -c 'test -f /opt/code/python-ismrmrd-server/main.py'; then
+            echo "❌ FIRE image validation failed: /opt/code/python-ismrmrd-server/main.py not found inside the chroot"
+            exit 1
+        fi
+        if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x {startup_script_path}'; then
+            echo "❌ FIRE image validation failed: generated startup script is missing or not executable"
+            exit 1
+        fi
+
+        sync
+        umount "${{mount_dir}}"
+        mounted=0
+        chmod 644 /workspace/{fire_img_name}
+        echo "✓ FIRE chroot image created at {fire_img_name}"
+        '''
+    )
+
+    process = subprocess.Popen(
+        [
             'docker', 'run', '--rm', '--privileged',
             '--platform', 'linux/amd64',
-            '-v', f"{volume_name}:/var/lib/docker",
-            '-v', f"{os.getcwd()}:/workspace",
+            '-v', f'{volume_name}:/var/lib/docker',
+            '-v', f'{os.getcwd()}:/workspace',
             '-w', '/workspace',
             docker_client_image,
-            'sh', '-c', docker_build_script
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
-        
-        # Monitor output and track tar file creation with progress bar
-        output_lines = []
-        tar_file_path = os.path.join(os.getcwd(), f"{baseFilename}.tar")
-        
-        # Initialize shared state variables before try block
-        monitoring_tar = False
-        pbar = None
-        monitor_thread = None
-        
-        try:
-            import threading
-            
-            def monitor_tar_file():
-                """Monitor the growing tar file and update progress bar"""
-                last_size = 0
-                while monitoring_tar:
-                    if os.path.exists(tar_file_path):
-                        try:
-                            current_size = os.path.getsize(tar_file_path)
-                            if current_size > last_size and pbar:
-                                pbar.update(current_size - last_size)
-                                last_size = current_size
-                        except (OSError, IOError):
-                            pass
-                    time.sleep(5)  # Reduced polling frequency from 0.2s to 0.5s
-            
-            for line in process.stdout:
-                output_lines.append(line)
-                print(line, end='')
-                
-                # Start monitoring when we see the save message
-                if "💾 Saving image to tar file" in line and not monitoring_tar:
-                    monitoring_tar = True
-                    if ensure_tqdm_installed():
-                        from tqdm import tqdm
-                        # Estimate size - actual size will vary but this gives a progress indicator
-                        # Use 20GB as a reasonable estimate for most images
-                        estimated_size = 20 * 1024 * 1024 * 1024
-                        pbar = tqdm(total=estimated_size, desc="Saving image", unit='B', 
-                                   unit_scale=True, unit_divisor=1024)
-                        monitor_thread = threading.Thread(target=monitor_tar_file, daemon=True)
-                        monitor_thread.start()
-                    else:
-                        pass  # If tqdm not available, just skip progress bar
-                
-                # Stop monitoring when save is complete
-                if "✓ Image saved to" in line and monitoring_tar:
-                    monitoring_tar = False
-                    if pbar:
-                        # Update to actual final size
-                        if os.path.exists(tar_file_path):
-                            final_size = os.path.getsize(tar_file_path)
-                            pbar.n = final_size
-                            pbar.total = final_size
-                        pbar.close()
-                        pbar = None
-                    if monitor_thread:
-                        monitor_thread.join(timeout=1)
-            
-            process.wait()
-            
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, process.args, 
-                                                   output=''.join(output_lines))
-        
-        finally:
-            # Clean up progress bar if still active
-            monitoring_tar = False
-            if pbar:
-                pbar.close()
-            
-            # Clean up Docker volume
-            print(f'\n🗑️  Cleaning up temporary Docker volume: {volume_name}')
-            subprocess.run(['docker', 'volume', 'rm', '-f', volume_name], 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        step_time = time.time() - start_time
-        print(f'\n⏱️  Build completed in {step_time:.1f} seconds')
-        
-        print('\n' + '=' * 70)
-        print('STEP 3/5: Preparing documentation')
+            'sh', '-c', docker_build_script,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        universal_newlines=True,
+    )
+
+    output_lines = []
+    try:
+        for line in process.stdout:
+            output_lines.append(line)
+            print(line, end='')
+
+        process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, process.args, output=''.join(output_lines))
+    finally:
+        print(f'\n🗑️  Cleaning up temporary Docker volume: {volume_name}')
+        subprocess.run(['docker', 'volume', 'rm', '-f', volume_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return base_image_tar
+
+
+if __name__ == '__main__':
+    jsonFilePath = 'OpenReconLabel.json'
+    schemaFilePath = '../OpenReconSchema_1.1.0.json'
+    dockerfilePath = 'OpenRecon.dockerfile'
+
+    dockerImageToUse = os.getenv('DOCKER_IMAGE_TO_USE')
+    baseDockerImage = dockerImageToUse if dockerImageToUse else os.getenv('baseDockerImage')
+    useLocalImage = os.getenv('USE_LOCAL_IMAGE', 'false').lower() == 'true'
+    forceLocalOnly = os.getenv('FORCE_LOCAL_ONLY', 'false').lower() == 'true'
+    keepCache = os.getenv('KEEP_CACHE', 'false').lower() == 'true'
+
+    if not validateJson(jsonFilePath, schemaFilePath):
+        raise Exception('Not writing Dockerfile because JSON is not valid')
+
+    with open(jsonFilePath, 'r') as jsonFile:
+        jsonData = json.load(jsonFile)
+
+    write_openrecon_dockerfile(baseDockerImage, dockerfilePath, jsonData)
+    print('Wrote Dockerfile:', os.path.abspath(dockerfilePath))
+
+    docsFile = detect_docs_file()
+    if not os.path.isfile(docsFile):
+        raise Exception('Could not find documentation file: ' + docsFile)
+
+    zipExe = shutil.which('7z')
+    if zipExe is None:
+        raise Exception('Could not find 7-Zip executable in PATH. Please download and install 7-Zip')
+
+    version = jsonData['general']['version']
+    vendor = jsonData['general']['vendor']
+    name = jsonData['general']['name']['en']
+
+    openreconBundleBase = f'OpenRecon_{vendor}_{name}_V{version}'
+    openreconTarName = openreconBundleBase + '.tar'
+    openreconPdfName = openreconBundleBase + '.pdf'
+    fireBundleBase = get_fire_bundle_base(vendor, name, version)
+    fireImgName = fireBundleBase + '.img'
+    fireRootfsTarName = fireBundleBase + '.rootfs.tar'
+    fireSearchString = os.getenv('fireSearchString', 'python3').strip() or 'python3'
+    fireFreeSpaceMb = parse_int_env('fireFreeSpaceMb', 50)
+    fireServerCommand = get_fire_server_command()
+    startupScriptPath = '/usr/local/bin/start-fire-openrecon.sh'
+    validateDefaultFireRuntime = not (os.getenv('fireStartupCommand') or '').strip()
+
+    dockerImagename = (f'OpenRecon_{vendor}_{name}:V{version}').lower()
+
+    build_start = time.time()
+    base_image_tar = None
+
+    try:
         print('=' * 70)
-        # Copy documentation file with appropriate filename
-        print(f'📄 Copying documentation to {baseFilename}.pdf...')
-        try:
-            shutil.copy(docsFile, baseFilename + '.pdf')
-            print(f'✓ Documentation copied')
-        except IOError as e:
-            print(f'❌ Error copying documentation: {e}')
+        print('PRE-BUILD: Checking CUDA version in base image')
+        print('=' * 70)
+        print(f'Base image: {baseDockerImage}')
+        from checkCudaVersion import checkCudaVersionInContainer
+        checkCudaVersionInContainer(baseDockerImage, maxCudaVersion='11.8')
+
+        print('=' * 70)
+        print('PRE-BUILD: Checking user in base image')
+        print('=' * 70)
+        print(f'Base image: {baseDockerImage}')
+        from checkRootUser import checkRootUserInContainer
+        checkRootUserInContainer(baseDockerImage)
+
+        print('=' * 70)
+        print('PRE-BUILD: Checking README.md for PDF rendering issues')
+        print('=' * 70)
+        from checkReadmeIssues import check_readme_file
+        readme_path = 'README.md'
+        if os.path.isfile(readme_path):
+            print(f'Checking {readme_path}...')
+            if not check_readme_file(readme_path):
+                print('\n❌ README.md has issues that need to be fixed')
+                print('   These issues can cause blank PDFs or rendering problems.')
+                raise Exception('README validation failed')
+            print('✅ README.md passed all checks.')
+        else:
+            print('⚠️  No README.md found, skipping check')
+
+        print('=' * 70)
+        print('STEP 1/6: Preparing Docker image build')
+        print('=' * 70)
+        print('Attempting to create Docker image with tag:', dockerImagename, '...')
+
+        base_image_tar = build_artifacts_in_dind(
+            docker_image_name=dockerImagename,
+            dockerfile_path=dockerfilePath,
+            openrecon_tar_name=openreconTarName,
+            fire_img_name=fireImgName,
+            fire_rootfs_tar_name=fireRootfsTarName,
+            use_local_image=useLocalImage,
+            base_docker_image=baseDockerImage,
+            force_local_only=forceLocalOnly,
+            keep_cache=keepCache,
+            fire_free_space_mb=fireFreeSpaceMb,
+            fire_server_command=fireServerCommand,
+            startup_script_path=startupScriptPath,
+            validate_default_runtime=validateDefaultFireRuntime,
+        )
 
         print('\n' + '=' * 70)
-        print('STEP 4/5: Creating final package')
+        print('STEP 3/6: Preparing documentation')
         print('=' * 70)
-        
-        # Check for USB thumb drives (macOS only)
-        output_dir = os.getcwd()
-        if shutil.which('diskutil'):  # macOS system
-            try:
-                # Get list of external volumes
-                volumes_output = subprocess.check_output(['ls', '/Volumes'], stderr=subprocess.DEVNULL).decode('utf-8')
-                volumes = [v.strip() for v in volumes_output.split('\n') if v.strip() and v.strip() != 'Macintosh HD']
-                
-                # Filter to only removable/external drives
-                usb_drives = []
-                for vol in volumes:
-                    vol_path = os.path.join('/Volumes', vol)
-                    try:
-                        # Get disk info to check if it's removable
-                        disk_info = subprocess.check_output(['diskutil', 'info', vol_path], stderr=subprocess.DEVNULL).decode('utf-8')
-                        if 'Removable Media' in disk_info or 'External' in disk_info:
-                            # Get available space
-                            stat = os.statvfs(vol_path)
-                            free_space_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-                            usb_drives.append((vol, free_space_gb))
-                    except:
-                        pass
-                
-                if usb_drives:
-                    print('\n🔍 Detected USB drive(s):')
-                    for i, (vol, free_space_gb) in enumerate(usb_drives, 1):
-                        print(f'   {i}. {vol} (Free: {free_space_gb:.1f} GiB)')
-                    
-                    # If only one USB drive, automatically select it
-                    if len(usb_drives) == 1:
-                        selected_volume = usb_drives[0][0]
-                        output_dir = os.path.join('/Volumes', selected_volume)
-                        # Verify we can write to it
-                        test_file = os.path.join(output_dir, '.write_test')
-                        try:
-                            with open(test_file, 'w') as f:
-                                f.write('test')
-                            os.remove(test_file)
-                            print(f'✓ Automatically selected USB drive: {output_dir}')
-                        except:
-                            print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
-                            output_dir = os.getcwd()
-                    else:
-                        # Multiple USB drives - prompt user to select
-                        is_ci = os.getenv('GITHUB_ACTIONS') or os.getenv('CI')
-                        if is_ci:
-                            # In CI, always save locally
-                            print('\n🤖 CI environment detected. Saving to current directory')
-                        else:
-                            print('\n💾 Would you like to save the output directly to a USB drive?')
-                            while True:
-                                response = input('Enter drive number to save there, or press Enter to save locally: ').strip()
-                                if response == '':
-                                    print('📁 Saving to current directory')
-                                    break
-                                try:
-                                    drive_idx = int(response) - 1
-                                    if 0 <= drive_idx < len(usb_drives):
-                                        selected_volume = usb_drives[drive_idx][0]
-                                        output_dir = os.path.join('/Volumes', selected_volume)
-                                        # Verify we can write to it
-                                        test_file = os.path.join(output_dir, '.write_test')
-                                        try:
-                                            with open(test_file, 'w') as f:
-                                                f.write('test')
-                                            os.remove(test_file)
-                                            print(f'✓ Will save to: {output_dir}')
-                                            break
-                                        except:
-                                            print(f'❌ Cannot write to {output_dir}. Saving locally instead.')
-                                            output_dir = os.getcwd()
-                                            break
-                                    else:
-                                        print(f'Please enter a number between 1 and {len(usb_drives)}, or press Enter')
-                                except ValueError:
-                                    print('Please enter a valid number or press Enter')
-            except:
-                pass  # If any error, just continue with local directory
-        
-        # Zip into a package (using store mode for speed)
-        zip_output_path = os.path.join(output_dir, baseFilename + '.zip')
-        print(f'📦 Packaging files into {os.path.basename(zip_output_path)}...')
-        if output_dir != os.getcwd():
-            print(f'   Target: {output_dir}')
-        print('   (Using Deflate mode - needed for OpenRecon to work!)')
-        
-        # Get total size for progress calculation
-        tar_size = os.path.getsize(baseFilename + '.tar')
-        pdf_size = os.path.getsize(baseFilename + '.pdf')
-        # Estimate compressed size to be 40% smaller than tar file
-        estimated_compressed_size = int(tar_size * 0.6)
-        total_size = estimated_compressed_size + pdf_size
-        
-        # Run 7z with progress monitoring
-        use_progress = ensure_tqdm_installed()
-        if use_progress:
-            try:
-                from tqdm import tqdm
-            except ImportError:
-                use_progress = False
-        
-        if use_progress:
-            import threading
-            
-            zip_output_file = zip_output_path
-            
-            # Remove old zip if exists
-            if os.path.exists(zip_output_file):
-                os.remove(zip_output_file)
-            
-            # Progress bar showing file sizes
-            pbar = tqdm(total=total_size, desc="Compressing", unit='B', unit_scale=True, unit_divisor=1024)
-            
-            # Flag to stop monitoring
-            stop_monitoring = threading.Event()
-            
-            def monitor_zip_size():
-                """Monitor the growing zip file size"""
-                last_size = 0
-                while not stop_monitoring.is_set():
-                    if os.path.exists(zip_output_file):
-                        try:
-                            current_size = os.path.getsize(zip_output_file)
-                            if current_size > last_size:
-                                pbar.update(current_size - last_size)
-                                last_size = current_size
-                        except (OSError, IOError):
-                            pass
-                    time.sleep(5)
-            
-            # Start monitoring thread
-            monitor_thread = threading.Thread(target=monitor_zip_size, daemon=True)
-            monitor_thread.start()
-            
-            # Run 7z compression
-            process = subprocess.Popen(
-                [zipExe, 'a', '-tzip', '-mm=Deflate', zip_output_file, baseFilename + '.tar', baseFilename + '.pdf'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT
-            )
-            
-            # Wait for completion
-            process.wait()
-            
-            # Stop monitoring
-            stop_monitoring.set()
-            monitor_thread.join(timeout=1)
-            
-            # Update to full size
-            if os.path.exists(zip_output_file):
-                final_size = os.path.getsize(zip_output_file)
-                pbar.n = min(total_size, final_size)
-            else:
-                pbar.n = total_size
-            pbar.refresh()
-            pbar.close()
-            
-            if process.returncode != 0:
-                output = process.stdout.read().decode('utf-8') if process.stdout else ''
-                raise subprocess.CalledProcessError(process.returncode, process.args, output=output)
-                
-        else:
-            # Fallback if tqdm is not available
-            # Just run without progress bar this time
-            output = subprocess.check_output([zipExe, 'a', '-tzip', '-mm=Deflate', baseFilename + '.zip', baseFilename + '.tar', baseFilename + '.pdf'], stderr=subprocess.STDOUT)
-        
-        print('✓ Package created successfully')
-        
+        print(f'📄 Copying documentation to {openreconPdfName}...')
+        shutil.copy(docsFile, openreconPdfName)
+        print('✓ Documentation copied')
+
         print('\n' + '=' * 70)
-        print('STEP 5/5: Cleanup')
+        print('STEP 4/6: Selecting output location')
         print('=' * 70)
-        
-        # Clean up temporary tar and pdf files
+        output_dir = determine_output_dir()
+
+        print('\n' + '=' * 70)
+        print('STEP 5/6: Creating distributable packages')
+        print('=' * 70)
+
+        openrecon_zip_output_path = os.path.join(output_dir, openreconBundleBase + '.zip')
+        print(f'📦 Packaging OpenRecon bundle into {os.path.basename(openrecon_zip_output_path)}...')
+        package_with_7z(zipExe, openrecon_zip_output_path, [openreconTarName, openreconPdfName])
+        print('✓ OpenRecon package created successfully')
+
+        fire_zip_output_path = os.path.join(output_dir, fireBundleBase + '.zip')
+        fire_ini_text = create_fire_ini_template(fireImgName, startupScriptPath, fireSearchString)
+        install_text = create_fire_install_text(fireImgName)
+        with tempfile.TemporaryDirectory(dir=os.getcwd(), prefix='fire-bundle-') as stage_dir_str:
+            stage_dir = Path(stage_dir_str)
+            build_fire_bundle_stage(
+                stage_dir=stage_dir,
+                fire_img_path=Path(fireImgName),
+                fire_ini_text=fire_ini_text,
+                install_text=install_text,
+                docs_source_path=openreconPdfName,
+            )
+            print(f'📦 Packaging FIRE bundle into {os.path.basename(fire_zip_output_path)}...')
+            package_with_7z(zipExe, fire_zip_output_path, sorted(os.listdir(stage_dir)), cwd=stage_dir)
+        print('✓ FIRE package created successfully')
+
+        print('\n' + '=' * 70)
+        print('STEP 6/6: Cleanup')
+        print('=' * 70)
         print('🗑️  Cleaning up temporary files...')
-        try:
-            if os.path.exists(baseFilename + '.tar'):
-                os.remove(baseFilename + '.tar')
-                print(f'   Removed {baseFilename}.tar')
-        except Exception as e:
-            print(f'   Warning: Could not remove tar file: {e}')
-        
-        try:
-            if os.path.exists(baseFilename + '.pdf'):
-                os.remove(baseFilename + '.pdf')
-                print(f'   Removed {baseFilename}.pdf')
-        except Exception as e:
-            print(f'   Warning: Could not remove pdf file: {e}')
-        
-        # Optionally keep base_image_tar for next build
+        for temp_path in [openreconTarName, openreconPdfName, fireImgName, fireRootfsTarName]:
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    print(f'   Removed {temp_path}')
+            except Exception as exc:
+                print(f'   Warning: Could not remove {temp_path}: {exc}')
+
         if useLocalImage and base_image_tar and os.path.exists(base_image_tar):
             if keepCache:
                 print(f'💾 Keeping {base_image_tar} for next build (KEEP_CACHE=true)')
             else:
                 os.remove(base_image_tar)
                 print(f'🗑️  Removed temporary tar file: {base_image_tar}')
-        
-        total_time = time.time() - start_time
+
+        total_time = time.time() - build_start
         print('\n' + '=' * 70)
-        print(f'✅ BUILD COMPLETED SUCCESSFULLY in {total_time:.1f} seconds ({total_time/60:.1f} minutes)')
+        print(f'✅ BUILD COMPLETED SUCCESSFULLY in {total_time:.1f} seconds ({total_time / 60:.1f} minutes)')
         print('=' * 70)
-        print(f'📦 Output: {zip_output_path}')
-        if os.path.exists(zip_output_path):
-            size_bytes = os.path.getsize(zip_output_path)
-            size_gb = size_bytes / (1024**3)
-            print(f'📊 Size: {size_gb:.2f} GiB')
+        for label, path in [('OpenRecon', openrecon_zip_output_path), ('FIRE', fire_zip_output_path)]:
+            print(f'📦 {label} Output: {path}')
+            if os.path.exists(path):
+                size_bytes = os.path.getsize(path)
+                size_gb = size_bytes / (1024 ** 3)
+                print(f'📊 {label} Size: {size_gb:.2f} GiB')
         print('=' * 70)
 
     except subprocess.CalledProcessError as e:
-        # If the command returns a non-zero exit status, it will raise a CalledProcessError
         print('Command failed with return code:', e.returncode)
         if hasattr(e.output, 'decode'):
             print('Error output:\n' + e.output.decode('utf-8'))
         else:
             print('Error output:\n' + str(e.output))
+        raise
+    except Exception as e:
+        print(f'Build failed: {e}')
+        raise

@@ -20,3 +20,15 @@ cd recipes/openreconexample
 # force local Docker image cache (no registry pull)
 /bin/bash ../build.sh --local-cache
 ```
+
+Each recipe build now emits two distributable artifacts by default:
+
+- `OpenRecon_<vendor>_<name>_V<version>.zip`
+- `FIRE_<vendor>_<name>_V<version>.zip`
+
+Optional FIRE overrides can be exported from a recipe `params.sh` when needed:
+
+- `fireFreeSpaceMb`
+- `fireStartupCommand`
+- `fireSearchString`
+- `fireBundleName`
