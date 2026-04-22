@@ -445,12 +445,12 @@ def build_artifacts_in_dind(
         if [ "{1 if create_fire_package else 0}" = "1" ]; then
             echo "📤 Exporting container filesystem for FIRE..."
             tmp_container="fire-export-$(date +%s)-$$"
+            rootfs_tar_path=/tmp/fire_rootfs_export.tar
             docker create --name "${{tmp_container}}" {docker_image_name} >/dev/null
-            docker export -o /workspace/{fire_rootfs_tar_name} "${{tmp_container}}"
+            docker export -o "${{rootfs_tar_path}}" "${{tmp_container}}"
             docker rm "${{tmp_container}}" >/dev/null
             tmp_container=""
-            chmod 644 /workspace/{fire_rootfs_tar_name}
-            echo "✓ Container filesystem exported to {fire_rootfs_tar_name}"
+            echo "✓ Container filesystem exported to temporary storage"
 
             echo "🧰 Installing FIRE image creation tools..."
             apk add --no-cache e2fsprogs util-linux >/dev/null
@@ -460,13 +460,25 @@ def build_artifacts_in_dind(
             mkdir -p "${{extract_dir}}"
 
             echo "📦 Expanding exported filesystem for sizing..."
-            tar -xf /workspace/{fire_rootfs_tar_name} -C "${{extract_dir}}"
+            tar -xf "${{rootfs_tar_path}}" -C "${{extract_dir}}"
+            rm -f "${{rootfs_tar_path}}"
 
             rootfs_bytes=$(du -sb "${{extract_dir}}" | awk '{{print $1}}')
             rootfs_buffer_bytes=$(( rootfs_bytes / 5 ))
             img_size_mb=$(( (rootfs_bytes + rootfs_buffer_bytes + 1048575) / 1048576 + {fire_free_space_mb} + 128 ))
             if [ "$img_size_mb" -le 0 ]; then
                 echo "❌ Computed FIRE image size is invalid"
+                exit 1
+            fi
+
+            workspace_free_kb=$(df -Pk /workspace | awk 'NR==2 {{print $4}}')
+            workspace_free_bytes=$(( workspace_free_kb * 1024 ))
+            required_img_bytes=$(( img_size_mb * 1048576 ))
+            if [ "$workspace_free_bytes" -lt "$required_img_bytes" ]; then
+                echo "❌ Not enough free space in /workspace to allocate the FIRE chroot image"
+                echo "   Required for image file: $required_img_bytes bytes ($(awk 'BEGIN {{printf \"%.2f\", '"$required_img_bytes"' / 1024 / 1024 / 1024}}') GiB)"
+                echo "   Available in /workspace: $workspace_free_bytes bytes ($(awk 'BEGIN {{printf \"%.2f\", '"$workspace_free_bytes"' / 1024 / 1024 / 1024}}') GiB)"
+                echo "   Try freeing local disk space, choosing a smaller image, or building on a larger filesystem."
                 exit 1
             fi
 

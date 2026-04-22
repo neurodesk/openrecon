@@ -89,6 +89,16 @@ echo "Package selection: $BUILD_PACKAGE_SELECTION"
 # Cleanup function to restore backup on exit (including interruptions)
 cleanup() {
     exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo ""
+        echo "🧹 Cleaning up generated artifacts after failed build..."
+        rm -f OpenRecon_*.tar
+        rm -f FIRE_*.img
+        rm -f FIRE_*.rootfs.tar
+        rm -f README.pdf
+        rm -f OpenRecon.dockerfile
+        rm -f .base_image.tar
+    fi
     if [ -f "OpenReconLabel.json.backup" ]; then
         echo ""
         echo "🔄 Restoring OpenReconLabel.json from backup..."
