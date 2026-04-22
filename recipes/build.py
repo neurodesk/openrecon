@@ -315,6 +315,8 @@ def create_fire_install_text(fire_img_name):
         - `{fire_img_name}`: Copy to `%CustomerIceProgs%\\fire\\chroot\\`
         - `fire.ini.template`: Merge into `%CustomerIceProgs%\\fire\\wip_070_fire_fire.ini`
           or the FIRE ini file used by your workflow
+        - `fire\\fire_*.ini` (if included): Copy to `%CustomerIceProgs%\\fire\\`
+        - `wip_070_fire_*.ipr` and matching `.xml` files (if included): Copy to `%CustomerIceProgs%\\`
         - `share\\code`, `share\\dependency`, `share\\log`: Optional starter folders for
           `%CustomerIceProgs%\\fire\\share\\`
         - The included PDF is the recipe/operator documentation
@@ -322,6 +324,9 @@ def create_fire_install_text(fire_img_name):
         Typical scanner-side locations
         ------------------------------
         - `%CustomerIceProgs%\\fire\\chroot\\{fire_img_name}`
+        - `%CustomerIceProgs%\\fire\\fire_*.ini`
+        - `%CustomerIceProgs%\\wip_070_fire_*.ipr`
+        - `%CustomerIceProgs%\\wip_070_fire_*.xml`
         - `%CustomerIceProgs%\\fire\\share\\code\\`
         - `%CustomerIceProgs%\\fire\\share\\dependency\\`
         - `%CustomerIceProgs%\\fire\\share\\log\\`
@@ -333,6 +338,26 @@ def create_fire_install_text(fire_img_name):
         - Unmount or stop the FIRE chroot service before replacing an installed `.img` on the scanner host
         '''
     )
+
+
+def copy_optional_fire_workflow_files(stage_dir, recipe_dir):
+    fire_dir = stage_dir / 'fire'
+    fire_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_files = []
+
+    for path in sorted(recipe_dir.glob('fire_*.ini')):
+        if path.is_file():
+            shutil.copy2(path, fire_dir / path.name)
+            copied_files.append(str(Path('fire') / path.name))
+
+    for pattern in ('wip_070_fire_*.ipr', 'wip_070_fire_*.xml'):
+        for path in sorted(recipe_dir.glob(pattern)):
+            if path.is_file():
+                shutil.copy2(path, stage_dir / path.name)
+                copied_files.append(path.name)
+
+    return copied_files
 
 
 def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_text, install_text, docs_source_path):
@@ -352,6 +377,8 @@ def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_text, install_tex
     (stage_dir / 'INSTALL_FIRE.txt').write_text(install_text)
     shutil.copy2(fire_img_path, stage_dir / fire_img_path.name)
     shutil.copy2(docs_source_path, stage_dir / Path(docs_source_path).name)
+    copy_optional_fire_workflow_files(stage_dir, Path.cwd())
+
 
 
 def build_artifacts_in_dind(
