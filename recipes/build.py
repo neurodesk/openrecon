@@ -212,7 +212,50 @@ def package_with_7z(zip_exe, zip_output_path, inputs, cwd=None):
 
     cmd = [zip_exe, 'a', '-tzip', '-mm=Deflate', zip_output_path]
     cmd.extend(inputs)
-    subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT)
+
+    def get_input_size_bytes(path):
+        if os.path.isdir(path):
+            total = 0
+            for root, _, filenames in os.walk(path):
+                for filename in filenames:
+                    total += os.path.getsize(os.path.join(root, filename))
+            return total
+        return os.path.getsize(path)
+
+    base_dir = cwd if cwd is not None else os.getcwd()
+    input_size_bytes = sum(get_input_size_bytes(os.path.join(base_dir, item)) for item in inputs)
+    last_reported_size = -1
+
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    try:
+        while process.poll() is None:
+            if os.path.exists(zip_output_path):
+                current_size = os.path.getsize(zip_output_path)
+                if current_size != last_reported_size:
+                    if input_size_bytes > 0:
+                        approx_percent = min(99, int((current_size / input_size_bytes) * 100))
+                        print(
+                            f'   compressing... {current_size / (1024 ** 3):.2f} GiB written '
+                            f'(approx {approx_percent}% of input size)'
+                        )
+                    else:
+                        print(f'   compressing... {current_size / (1024 ** 3):.2f} GiB written')
+                    last_reported_size = current_size
+            time.sleep(5)
+
+        output, _ = process.communicate()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, cmd, output=output)
+    finally:
+        if process.stdout:
+            process.stdout.close()
 
 
 def create_fire_ini_template(fire_img_name, startup_script_path, fire_search_string):
@@ -338,6 +381,8 @@ def build_artifacts_in_dind(
     startup_script_rel = startup_script_path.lstrip('/')
     startup_script_dir_rel = os.path.dirname(startup_script_rel)
     fire_command_quoted = shlex.quote(fire_server_command)
+    startup_exec_line = f'exec sh -c {fire_command_quoted}'
+    startup_exec_line_for_printf = startup_exec_line.replace("'", "'\"'\"'")
     validate_default_runtime_flag = '1' if validate_default_runtime else '0'
 
     artifact_label = 'Docker image'
@@ -452,7 +497,7 @@ def build_artifacts_in_dind(
                 'export LOG_PATH' \
                 'export FIRE_LOG_PATH="$LOG_PATH"' \
                 '/usr/sbin/ldconfig' \
-                'exec sh -c {fire_command_quoted}' \
+                '{startup_exec_line_for_printf}' \
                 > "${{mount_dir}}/{startup_script_rel}"
             chmod 755 "${{mount_dir}}/{startup_script_rel}"
 
