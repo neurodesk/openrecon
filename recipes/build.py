@@ -5,11 +5,16 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
 import uuid
 from pathlib import Path
+
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True, write_through=True)
 
 
 def validateJson(jsonFilePath, schemaFilePath):
@@ -212,6 +217,9 @@ def package_with_7z(zip_exe, zip_output_path, inputs, cwd=None):
 
     cmd = [zip_exe, 'a', '-tzip', '-mm=Deflate', zip_output_path]
     cmd.extend(inputs)
+    progress_report_interval_seconds = 30
+    progress_report_size_step_bytes = 1024 ** 3
+    progress_report_percent_step = 5
 
     def get_input_size_bytes(path):
         if os.path.isdir(path):
@@ -225,6 +233,8 @@ def package_with_7z(zip_exe, zip_output_path, inputs, cwd=None):
     base_dir = cwd if cwd is not None else os.getcwd()
     input_size_bytes = sum(get_input_size_bytes(os.path.join(base_dir, item)) for item in inputs)
     last_reported_size = -1
+    last_reported_percent = -1
+    last_report_time = time.monotonic()
 
     process = subprocess.Popen(
         cmd,
@@ -238,16 +248,33 @@ def package_with_7z(zip_exe, zip_output_path, inputs, cwd=None):
         while process.poll() is None:
             if os.path.exists(zip_output_path):
                 current_size = os.path.getsize(zip_output_path)
-                if current_size != last_reported_size:
+                if current_size > last_reported_size:
+                    now = time.monotonic()
+                    approx_percent = None
+                    should_report = last_reported_size < 0
+
                     if input_size_bytes > 0:
                         approx_percent = min(99, int((current_size / input_size_bytes) * 100))
-                        print(
-                            f'   compressing... {current_size / (1024 ** 3):.2f} GiB written '
-                            f'(approx {approx_percent}% of input size)'
-                        )
-                    else:
-                        print(f'   compressing... {current_size / (1024 ** 3):.2f} GiB written')
-                    last_reported_size = current_size
+                        if approx_percent >= last_reported_percent + progress_report_percent_step:
+                            should_report = True
+
+                    if current_size >= last_reported_size + progress_report_size_step_bytes:
+                        should_report = True
+
+                    if now - last_report_time >= progress_report_interval_seconds:
+                        should_report = True
+
+                    if should_report:
+                        if approx_percent is not None:
+                            print(
+                                f'   compressing... {current_size / (1024 ** 3):.2f} GiB written '
+                                f'(approx {approx_percent}% of input size)'
+                            )
+                            last_reported_percent = approx_percent
+                        else:
+                            print(f'   compressing... {current_size / (1024 ** 3):.2f} GiB written')
+                        last_reported_size = current_size
+                        last_report_time = now
             time.sleep(5)
 
         output, _ = process.communicate()
@@ -433,7 +460,7 @@ def build_artifacts_in_dind(
         {load_image_cmd}
 
         echo "🔨 Building Docker image..."
-        docker build --platform linux/amd64 -t {docker_image_name} -f {dockerfile_path} ./
+        DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker build --progress=plain --platform linux/amd64 -t {docker_image_name} -f {dockerfile_path} ./
         echo "✓ Docker image built successfully"
         if [ "{1 if create_openrecon_package else 0}" = "1" ]; then
             echo "💾 Saving OpenRecon image tar..."

@@ -195,6 +195,21 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+DOCKER_TIMEOUT_BIN=$(command -v timeout || command -v gtimeout || true)
+DOCKER_CMD_TIMEOUT_SECONDS=${DOCKER_CMD_TIMEOUT_SECONDS:-15}
+
+docker_with_timeout() {
+    if [ -n "$DOCKER_TIMEOUT_BIN" ]; then
+        "$DOCKER_TIMEOUT_BIN" "${DOCKER_CMD_TIMEOUT_SECONDS}s" docker "$@"
+    else
+        docker "$@"
+    fi
+}
+
+docker_image_exists() {
+    docker_with_timeout image inspect "$1" >/dev/null 2>&1
+}
+
 # build pdf file from README.md
 # source tool-specific parameters
 source params.sh
@@ -246,6 +261,7 @@ else
             echo "📄 Generating PDF from README.md..."
             mdpdf README.md
         fi
+        echo "✓ Documentation step complete"
     fi
 fi
 
@@ -270,13 +286,33 @@ fi
 # 1) explicit localDockerImage override
 # 2) canonical local name:version (tool:version)
 # 3) baseDockerImage tag itself
-if [ -n "$localDockerImage" ] && docker image inspect "$localDockerImage" >/dev/null 2>&1; then
+echo "🐳 Checking host Docker daemon..."
+docker_context=$(docker context show 2>/dev/null || echo "unknown")
+if ! docker_with_timeout ps --format '{{.ID}}' >/dev/null 2>&1; then
+    docker_status=$?
+    if [ "$docker_status" -eq 124 ]; then
+        echo "Error: Docker daemon probe timed out after ${DOCKER_CMD_TIMEOUT_SECONDS}s."
+        echo "Current Docker context: $docker_context"
+        echo "The Docker CLI is responding, but daemon-backed commands are hanging."
+        echo "Typical fixes: restart Docker Desktop, switch to a working context, or set DOCKER_HOST correctly."
+    else
+        echo "Error: Docker daemon is not reachable."
+        echo "Current Docker context: $docker_context"
+        echo "Start Docker and retry."
+    fi
+    exit 1
+fi
+echo "✓ Host Docker daemon is reachable"
+
+echo "🔍 Checking local Docker cache..."
+if [ -n "$localDockerImage" ] && docker_image_exists "$localDockerImage"; then
     LOCAL_IMAGE_TAG="$localDockerImage"
-elif [ -n "$CANONICAL_LOCAL_TAG" ] && docker image inspect "$CANONICAL_LOCAL_TAG" >/dev/null 2>&1; then
+elif [ -n "$CANONICAL_LOCAL_TAG" ] && docker_image_exists "$CANONICAL_LOCAL_TAG"; then
     LOCAL_IMAGE_TAG="$CANONICAL_LOCAL_TAG"
-elif docker image inspect "$baseDockerImage" >/dev/null 2>&1; then
+elif docker_image_exists "$baseDockerImage"; then
     LOCAL_IMAGE_TAG="$baseDockerImage"
 fi
+echo "✓ Local Docker cache lookup complete"
 
 if [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
     if [ -z "$LOCAL_IMAGE_TAG" ]; then
@@ -314,6 +350,7 @@ fi
 echo "Docker image to use: $DOCKER_IMAGE_TO_USE"
 
 # Replace VERSION_WILL_BE_REPLACED_BY_SCRIPT in OpenReconLabel.json with $version
+echo "📝 Preparing OpenReconLabel.json..."
 # run correct sed command on MacOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s/VERSION_WILL_BE_REPLACED_BY_SCRIPT/$version/g" OpenReconLabel.json
@@ -332,8 +369,8 @@ echo "----------------------------------------"
 echo "baseDockerImage: $baseDockerImage"
 
 # build zip file
-echo "Building OpenRecon file..."
-python3 ../build.py
+echo "🚀 Starting Python build pipeline..."
+python3 -u ../build.py
 
 # Note: Backup restoration now handled by cleanup trap function
 # This ensures restoration even if script is interrupted
