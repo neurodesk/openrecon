@@ -751,13 +751,17 @@ if __name__ == '__main__':
         print('=' * 70)
 
         if createOpenReconPackage:
-            openrecon_zip_output_path = os.path.join(output_dir, openreconBundleBase + '.zip')
+            openrecon_output_dir = os.path.join(output_dir, 'openrecon')
+            os.makedirs(openrecon_output_dir, exist_ok=True)
+            openrecon_zip_output_path = os.path.join(openrecon_output_dir, openreconBundleBase + '.zip')
             print(f'📦 Packaging OpenRecon bundle into {os.path.basename(openrecon_zip_output_path)}...')
             package_with_7z(zipExe, openrecon_zip_output_path, [openreconTarName, openreconPdfName])
             print('✓ OpenRecon package created successfully')
 
         if createFirePackage:
-            fire_zip_output_path = os.path.join(output_dir, fireBundleBase + '.zip')
+            fire_output_dir = os.path.join(output_dir, 'fire')
+            os.makedirs(fire_output_dir, exist_ok=True)
+            fire_zip_output_path = os.path.join(fire_output_dir, fireBundleBase + '.zip')
             fire_ini_text = create_fire_ini_template(fireImgName, startupScriptPath, fireSearchString)
             install_text = create_fire_install_text(fireImgName)
             with tempfile.TemporaryDirectory(dir=os.getcwd(), prefix='fire-bundle-') as stage_dir_str:
