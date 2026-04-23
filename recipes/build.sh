@@ -5,7 +5,7 @@ set -e
 # Command-line options
 IGNORE_MDPDF=false
 FORCE_LOCAL_CACHE=false
-BUILD_PACKAGE_SELECTION=${BUILD_PACKAGE_SELECTION:-both}
+BUILD_PACKAGE_SELECTION=${BUILD_PACKAGE_SELECTION:-openrecon}
 
 usage() {
     cat <<EOF
@@ -52,8 +52,8 @@ if [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
         echo "  2) FIRE package only"
         echo "  3) Both packages"
         while true; do
-            read -r -p "Select package(s) to create [3]: " package_choice
-            case "${package_choice:-3}" in
+            read -r -p "Select package(s) to create [1]: " package_choice
+            case "${package_choice:-1}" in
                 1)
                     BUILD_PACKAGE_SELECTION=openrecon
                     break

@@ -111,7 +111,7 @@ def parse_int_env(var_name, default_value):
 
 
 def get_package_selection():
-    selection = os.getenv('BUILD_PACKAGE_SELECTION', 'both').strip().lower()
+    selection = os.getenv('BUILD_PACKAGE_SELECTION', 'openrecon').strip().lower()
     valid_selections = {'openrecon', 'fire', 'both'}
     if selection not in valid_selections:
         raise ValueError(
