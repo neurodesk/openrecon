@@ -27,25 +27,28 @@ jobs:
         id: ENVVARS
         run: |
           APPLICATION=${{ matrix.application }}
-          BUILDDATE=`date +%Y%m%d`
-          echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
-          echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
+          BUILDDATE=$(date +%Y%m%d)
+          echo "APPLICATION=$APPLICATION" >> "$GITHUB_ENV"
+          echo "BUILDDATE=$BUILDDATE" >> "$GITHUB_ENV"
+          echo "BUILDDATE=$BUILDDATE" >> "$GITHUB_OUTPUT"
       - name: Build recipes
         run: |
           echo "APPLICATION: $APPLICATION"
-          cd recipes/$APPLICATION
-          echo `which python`
-          /bin/bash ../build.sh
+          cd "recipes/$APPLICATION"
+          command -v python
+          BUILD_PACKAGE_SELECTION=both /bin/bash ../build.sh
       - name: Set artifact variables
         id: IMAGEVARS
         run: |
           echo "finding bundle files for $APPLICATION:"
-          OPENRECON_ZIPFILE=$(find "./recipes/$APPLICATION" -maxdepth 1 -type f -iname "OpenRecon_*.zip" | head -1)
-          FIRE_ZIPFILE=$(find "./recipes/$APPLICATION" -maxdepth 1 -type f -iname "FIRE_*.zip" | head -1)
+          OPENRECON_ZIPFILE=$(find "./recipes/$APPLICATION/openrecon" -maxdepth 1 -type f -iname "OpenRecon_*.zip" 2>/dev/null | head -1)
+          FIRE_ZIPFILE=$(find "./recipes/$APPLICATION/fire" -maxdepth 1 -type f -iname "FIRE_*.zip" 2>/dev/null | head -1)
           if [ -z "$OPENRECON_ZIPFILE" ] || [ -z "$FIRE_ZIPFILE" ]; then
             echo "Missing expected build output(s)"
             echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE"
             echo "FIRE_ZIPFILE=$FIRE_ZIPFILE"
+            echo "Available package files:"
+            find "./recipes/$APPLICATION" -maxdepth 3 -type f \( -iname "OpenRecon_*.zip" -o -iname "FIRE_*.zip" \) -print
             exit 1
           fi
           IMAGENAME=$(basename "$OPENRECON_ZIPFILE" .zip)
@@ -54,13 +57,17 @@ jobs:
           echo "FIRE_ZIPFILE: $FIRE_ZIPFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "FIRE_IMAGENAME: $FIRE_IMAGENAME"
-          echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE" >> $GITHUB_ENV
-          echo "FIRE_ZIPFILE=$FIRE_ZIPFILE" >> $GITHUB_ENV
-          echo "ZIPFILE=$OPENRECON_ZIPFILE" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
-          echo "FIRE_IMAGENAME=$FIRE_IMAGENAME" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
-          echo "FIRE_IMAGENAME=$FIRE_IMAGENAME" >> $GITHUB_OUTPUT
+          {
+            echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE"
+            echo "FIRE_ZIPFILE=$FIRE_ZIPFILE"
+            echo "ZIPFILE=$OPENRECON_ZIPFILE"
+            echo "IMAGENAME=$IMAGENAME"
+            echo "FIRE_IMAGENAME=$FIRE_IMAGENAME"
+          } >> "$GITHUB_ENV"
+          {
+            echo "IMAGENAME=$IMAGENAME"
+            echo "FIRE_IMAGENAME=$FIRE_IMAGENAME"
+          } >> "$GITHUB_OUTPUT"
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722
         with:
@@ -70,33 +77,36 @@ jobs:
         run: /bin/bash .github/workflows/upload-zip.sh "$OPENRECON_ZIPFILE" "$FIRE_ZIPFILE"
       - name: Generate job output
         run: |
-          echo "The OpenRecon and FIRE bundles were built successfully. To test them, download:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-          echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
-          echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-          echo "# OpenRecon zip: copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming" >> $GITHUB_STEP_SUMMARY
-          echo "# FIRE zip: unpack and install under %CustomerIceProgs%\fire\ as described in INSTALL_FIRE.txt" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "The OpenRecon and FIRE bundles were built successfully. To test them, download:"
+            echo ""
+            echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
+            echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
+            echo ""
+            printf '%s\n' '# OpenRecon zip: copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
+            printf '%s\n' '# FIRE zip: unpack and install under %CustomerIceProgs%\fire\ as described in INSTALL_FIRE.txt'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Generate issue for new container to test and release
         env:
           GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
         run: |
-          cat > issue-body.md <<EOF
-          The OpenRecon and FIRE bundles were successfully built by @${{ github.actor }}. To test them, download:
-
-          \`\`\`
-          curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip
-          curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip
-          \`\`\`
-
-          For OpenRecon, copy the zip file to C:\\Program Files\\Siemens\\Numaris\\OperationalManagement\\FileTransfer\\incoming.
-
-          For FIRE, unpack the zip and install the \`.img\`, \`fire.ini.template\`, and \`share\` contents under \`%CustomerIceProgs%\\fire\\` as described in \`INSTALL_FIRE.txt\`.
-
-          once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.
-
-          Please close this issue when completed :)
-          EOF
+          # shellcheck disable=SC2016
+          {
+            printf '%s\n' "The OpenRecon and FIRE bundles were successfully built by @${{ github.actor }}. To test them, download:"
+            printf '\n'
+            printf '%s\n' '```'
+            printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
+            printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.'
+            printf '\n'
+            printf '%s\n' 'For FIRE, unpack the zip and install the `.img`, `fire.ini.template`, and `share` contents under `%CustomerIceProgs%\fire\` as described in `INSTALL_FIRE.txt`.'
+            printf '\n'
+            printf '%s\n' 'once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.'
+            printf '\n'
+            printf '%s\n' 'Please close this issue when completed :)'
+          } > issue-body.md
           gh issue create \
             --repo "${{ github.repository }}" \
             --title "New container ${IMAGENAME} / ${FIRE_IMAGENAME}" \
