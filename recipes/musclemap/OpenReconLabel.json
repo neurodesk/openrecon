@@ -153,7 +153,7 @@
           "name": { "en": "leg" }
         }
       ],
-      "default": "",
+      "default": "wholebody",
       "information": { "en": "Region passed to MuscleMap metrics" }
     },
     {
