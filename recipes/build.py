@@ -41,6 +41,120 @@ def validateJson(jsonFilePath, schemaFilePath):
         return False
 
 
+def get_parameter_label(parameter):
+    parameter_id = parameter.get('id', '<missing id>')
+    parameter_type = parameter.get('type', '<missing type>')
+    return f'{parameter_type} parameter {parameter_id!r}'
+
+
+def validate_openrecon_label_metadata(json_data):
+    errors = []
+    parameters = json_data.get('parameters', [])
+    parameter_ids = []
+
+    for parameter in parameters:
+        parameter_id = parameter.get('id')
+        parameter_ids.append(parameter_id)
+
+        if parameter.get('type') != 'choice':
+            continue
+
+        label = get_parameter_label(parameter)
+        values = parameter.get('values', [])
+        value_ids = [value.get('id') for value in values]
+        default = parameter.get('default')
+
+        if default == '':
+            errors.append(f'{label} has an empty default. Choice defaults must name one of values[*].id.')
+        elif default not in value_ids:
+            errors.append(f'{label} default {default!r} is not listed in values[*].id: {value_ids!r}.')
+
+        for value_index, value_id in enumerate(value_ids):
+            if not isinstance(value_id, str) or value_id == '':
+                errors.append(f'{label} value at index {value_index} has an empty or non-string id.')
+
+        duplicate_value_ids = sorted(
+            value_id for value_id in set(value_ids) if value_id is not None and value_ids.count(value_id) > 1
+        )
+        if duplicate_value_ids:
+            errors.append(f'{label} has duplicate choice value id(s): {duplicate_value_ids!r}.')
+
+    duplicate_parameter_ids = sorted(
+        parameter_id for parameter_id in set(parameter_ids) if parameter_id is not None and parameter_ids.count(parameter_id) > 1
+    )
+    if duplicate_parameter_ids:
+        errors.append(f'OpenReconLabel.json has duplicate parameter id(s): {duplicate_parameter_ids!r}.')
+
+    config_parameters = [parameter for parameter in parameters if parameter.get('id') == 'config']
+    if len(config_parameters) != 1:
+        errors.append(f'OpenReconLabel.json must contain exactly one parameter with id "config"; found {len(config_parameters)}.')
+    else:
+        config_parameter = config_parameters[0]
+        if config_parameter.get('type') != 'choice':
+            errors.append('OpenReconLabel.json parameter "config" must have type "choice".')
+        if not config_parameter.get('values'):
+            errors.append('OpenReconLabel.json parameter "config" must define at least one choice value.')
+
+    if errors:
+        raise ValueError('OpenReconLabel.json metadata validation failed:\n- ' + '\n- '.join(errors))
+
+
+def get_openrecon_config_module_names(json_data):
+    for parameter in json_data.get('parameters', []):
+        if parameter.get('id') == 'config':
+            return [value.get('id') for value in parameter.get('values', [])]
+    return []
+
+
+def create_config_module_validation_script(docker_image_name, config_module_names):
+    config_modules_json = shlex.quote(json.dumps(config_module_names))
+    docker_image_name_quoted = shlex.quote(docker_image_name)
+    return textwrap.dedent(
+        f'''\
+        echo "🔍 Validating OpenRecon config modules inside image..."
+        docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh {config_modules_json} <<'PY'
+        import importlib
+        import importlib.util
+        import json
+        import sys
+
+        config_module_names = json.loads(sys.argv[1])
+        errors = []
+
+        for config_module_name in config_module_names:
+            try:
+                spec = importlib.util.find_spec(config_module_name)
+            except Exception as exc:
+                errors.append(f"{{config_module_name!r}} cannot be resolved as a Python module: {{exc}}")
+                continue
+
+            if spec is None:
+                errors.append(f"{{config_module_name!r}} is not importable from /opt/code/python-ismrmrd-server")
+                continue
+
+            try:
+                module = importlib.import_module(config_module_name)
+            except Exception as exc:
+                errors.append(f"{{config_module_name!r}} failed to import: {{exc}}")
+                continue
+
+            process = getattr(module, "process", None)
+            if not callable(process):
+                errors.append(f"{{config_module_name!r}} does not define a callable process function")
+
+        if errors:
+            print("OpenRecon config module validation failed:", file=sys.stderr)
+            for error in errors:
+                print(f"- {{error}}", file=sys.stderr)
+            sys.exit(1)
+
+        print("OpenRecon config module validation passed for: " + ", ".join(config_module_names))
+        PY
+        echo "✓ OpenRecon config modules are valid"
+        '''
+    )
+
+
 def ensure_dind_image_available(image_name, force_local_only):
     if force_local_only:
         print(f'\n🐳 Local-only mode: checking DinD image in local cache: {image_name}')
@@ -397,6 +511,7 @@ def build_artifacts_in_dind(
     fire_server_command,
     startup_script_path,
     validate_default_runtime,
+    config_module_names,
 ):
     base_image_tar = None
     if use_local_image:
@@ -438,6 +553,7 @@ def build_artifacts_in_dind(
     startup_exec_line = f'exec sh -c {fire_command_quoted}'
     startup_exec_line_for_printf = startup_exec_line.replace("'", "'\"'\"'")
     validate_default_runtime_flag = '1' if validate_default_runtime else '0'
+    config_module_validation_script = create_config_module_validation_script(docker_image_name, config_module_names)
 
     artifact_label = 'Docker image'
     if create_openrecon_package and create_fire_package:
@@ -489,6 +605,7 @@ def build_artifacts_in_dind(
         echo "🔨 Building Docker image..."
         DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker build --progress=plain --platform linux/amd64 -t {docker_image_name} -f {dockerfile_path} ./
         echo "✓ Docker image built successfully"
+        {config_module_validation_script}
         if [ "{1 if create_openrecon_package else 0}" = "1" ]; then
             echo "💾 Saving OpenRecon image tar..."
             docker save -o /workspace/{openrecon_tar_name} {docker_image_name}
@@ -646,6 +763,9 @@ if __name__ == '__main__':
     with open(jsonFilePath, 'r') as jsonFile:
         jsonData = json.load(jsonFile)
 
+    validate_openrecon_label_metadata(jsonData)
+    print('OpenReconLabel.json metadata checks passed.')
+
     write_openrecon_dockerfile(baseDockerImage, dockerfilePath, jsonData)
     print('Wrote Dockerfile:', os.path.abspath(dockerfilePath))
 
@@ -732,6 +852,7 @@ if __name__ == '__main__':
             fire_server_command=fireServerCommand,
             startup_script_path=startupScriptPath,
             validate_default_runtime=validateDefaultFireRuntime,
+            config_module_names=get_openrecon_config_module_names(jsonData),
         )
 
         print('\n' + '=' * 70)
