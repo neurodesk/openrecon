@@ -153,9 +153,13 @@ def create_config_module_validation_script(docker_image_name, config_module_name
         f'''\
         echo "🔍 Validating OpenRecon config modules inside image..."
         config_modules_json={config_modules_json}
-        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh "$config_modules_json" <<'PY'
+        direct_validation_log=/tmp/openrecon_config_direct_validation.log
+        rm -f "${{direct_validation_log}}"
+        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh "$config_modules_json" >"${{direct_validation_log}}" 2>&1 <<'PY'
 {validation_python}PY
         then
+            cat "${{direct_validation_log}}"
+            rm -f "${{direct_validation_log}}"
             echo "✓ OpenRecon config modules are valid"
         else
             validation_status=$?
@@ -165,19 +169,34 @@ def create_config_module_validation_script(docker_image_name, config_module_name
             mkdir -p "${{validation_root}}"
 
             tmp_container="config-validation-$(date +%s)-$$"
-            docker create --platform linux/amd64 --name "${{tmp_container}}" {docker_image_name_quoted} >/dev/null
-            docker cp "${{tmp_container}}:/." "${{validation_root}}"
-            docker rm "${{tmp_container}}" >/dev/null
-            tmp_container=""
-            mkdir -p "${{validation_root}}/tmp"
-            docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {docker_image_name_quoted} \\
-                | sed "/^$/d; s/'/'\\\\''/g; s/^/export '/; s/$/'/" \\
-                > "${{validation_root}}/tmp/openrecon_config_validation_env.sh"
+            if (
+                set -e
+                docker create --platform linux/amd64 --name "${{tmp_container}}" {docker_image_name_quoted} >/dev/null
+                docker cp "${{tmp_container}}:/." "${{validation_root}}"
+                docker rm "${{tmp_container}}" >/dev/null
+                mkdir -p "${{validation_root}}/tmp"
+                docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {docker_image_name_quoted} \\
+                    | sed "/^$/d; s/'/'\\\\''/g; s/^/export '/; s/$/'/" \\
+                    > "${{validation_root}}/tmp/openrecon_config_validation_env.sh"
 
-            chroot "${{validation_root}}" /bin/sh -c '. /tmp/openrecon_config_validation_env.sh && cd /opt/code/python-ismrmrd-server && PYTHONHASHSEED=0 python3 - "$@"' sh "$config_modules_json" <<'PY'
+                chroot "${{validation_root}}" /bin/sh -c '. /tmp/openrecon_config_validation_env.sh && cd /opt/code/python-ismrmrd-server && PYTHONHASHSEED=0 python3 - "$@"' sh "$config_modules_json" <<'PY'
 {validation_python}PY
-            rm -rf "${{validation_root}}"
-            echo "✓ OpenRecon config modules are valid"
+            ); then
+                tmp_container=""
+                rm -rf "${{validation_root}}"
+                rm -f "${{direct_validation_log}}"
+                echo "✓ OpenRecon config modules are valid"
+            else
+                fallback_status=$?
+                echo "❌ Copied-rootfs OpenRecon config validation failed with exit code $fallback_status."
+                echo "Direct container validation output:"
+                cat "${{direct_validation_log}}"
+                docker rm -f "${{tmp_container}}" >/dev/null 2>&1 || true
+                tmp_container=""
+                rm -rf "${{validation_root}}"
+                rm -f "${{direct_validation_log}}"
+                exit "$fallback_status"
+            fi
         fi
         '''
     )
