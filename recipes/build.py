@@ -109,10 +109,8 @@ def get_openrecon_config_module_names(json_data):
 def create_config_module_validation_script(docker_image_name, config_module_names):
     config_modules_json = shlex.quote(json.dumps(config_module_names))
     docker_image_name_quoted = shlex.quote(docker_image_name)
-    return textwrap.dedent(
-        f'''\
-        echo "🔍 Validating OpenRecon config modules inside image..."
-        docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh {config_modules_json} <<'PY'
+    validation_python = textwrap.dedent(
+        '''\
         import importlib
         import importlib.util
         import json
@@ -125,32 +123,62 @@ def create_config_module_validation_script(docker_image_name, config_module_name
             try:
                 spec = importlib.util.find_spec(config_module_name)
             except Exception as exc:
-                errors.append(f"{{config_module_name!r}} cannot be resolved as a Python module: {{exc}}")
+                errors.append(f"{config_module_name!r} cannot be resolved as a Python module: {exc}")
                 continue
 
             if spec is None:
-                errors.append(f"{{config_module_name!r}} is not importable from /opt/code/python-ismrmrd-server")
+                errors.append(f"{config_module_name!r} is not importable from /opt/code/python-ismrmrd-server")
                 continue
 
             try:
                 module = importlib.import_module(config_module_name)
             except Exception as exc:
-                errors.append(f"{{config_module_name!r}} failed to import: {{exc}}")
+                errors.append(f"{config_module_name!r} failed to import: {exc}")
                 continue
 
             process = getattr(module, "process", None)
             if not callable(process):
-                errors.append(f"{{config_module_name!r}} does not define a callable process function")
+                errors.append(f"{config_module_name!r} does not define a callable process function")
 
         if errors:
             print("OpenRecon config module validation failed:", file=sys.stderr)
             for error in errors:
-                print(f"- {{error}}", file=sys.stderr)
+                print(f"- {error}", file=sys.stderr)
             sys.exit(1)
 
         print("OpenRecon config module validation passed for: " + ", ".join(config_module_names))
-        PY
-        echo "✓ OpenRecon config modules are valid"
+        '''
+    )
+    return textwrap.dedent(
+        f'''\
+        echo "🔍 Validating OpenRecon config modules inside image..."
+        config_modules_json={config_modules_json}
+        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh "$config_modules_json" <<'PY'
+{validation_python}PY
+        then
+            echo "✓ OpenRecon config modules are valid"
+        else
+            validation_status=$?
+            echo "⚠️  Direct container validation failed with exit code $validation_status; retrying from a copied root filesystem without starting a nested container."
+            validation_root=/tmp/openrecon_config_validation_root
+            rm -rf "${{validation_root}}"
+            mkdir -p "${{validation_root}}"
+
+            tmp_container="config-validation-$(date +%s)-$$"
+            docker create --platform linux/amd64 --name "${{tmp_container}}" {docker_image_name_quoted} >/dev/null
+            docker cp "${{tmp_container}}:/." "${{validation_root}}"
+            docker rm "${{tmp_container}}" >/dev/null
+            tmp_container=""
+            mkdir -p "${{validation_root}}/tmp"
+            docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {docker_image_name_quoted} \\
+                | sed "/^$/d; s/'/'\\\\''/g; s/^/export '/; s/$/'/" \\
+                > "${{validation_root}}/tmp/openrecon_config_validation_env.sh"
+
+            chroot "${{validation_root}}" /bin/sh -c '. /tmp/openrecon_config_validation_env.sh && cd /opt/code/python-ismrmrd-server && PYTHONHASHSEED=0 python3 - "$@"' sh "$config_modules_json" <<'PY'
+{validation_python}PY
+            rm -rf "${{validation_root}}"
+            echo "✓ OpenRecon config modules are valid"
+        fi
         '''
     )
 

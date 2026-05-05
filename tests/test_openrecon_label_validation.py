@@ -161,6 +161,10 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('/opt/code/python-ismrmrd-server', script)
         self.assertIn('importlib.util.find_spec', script)
         self.assertIn('callable(process)', script)
+        self.assertIn('Direct container validation failed', script)
+        self.assertIn('docker cp "${tmp_container}:/." "${validation_root}"', script)
+        self.assertIn('openrecon_config_validation_env.sh', script)
+        self.assertIn('chroot "${validation_root}"', script)
         self.assertIn('musclemap', script)
 
 
