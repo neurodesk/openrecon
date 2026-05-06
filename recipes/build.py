@@ -174,7 +174,20 @@ def create_config_module_validation_script(docker_image_name, config_module_name
                 docker create --platform linux/amd64 --name "${{tmp_container}}" {docker_image_name_quoted} >/dev/null
                 docker cp "${{tmp_container}}:/." "${{validation_root}}"
                 docker rm "${{tmp_container}}" >/dev/null
-                mkdir -p "${{validation_root}}/tmp"
+                mkdir -p "${{validation_root}}/tmp" "${{validation_root}}/dev"
+                create_chroot_device() {{
+                    device_name="$1"
+                    device_major="$2"
+                    device_minor="$3"
+                    device_path="${{validation_root}}/dev/${{device_name}}"
+                    if [ ! -e "${{device_path}}" ]; then
+                        mknod -m 666 "${{device_path}}" c "${{device_major}}" "${{device_minor}}"
+                    fi
+                }}
+                create_chroot_device null 1 3
+                create_chroot_device zero 1 5
+                create_chroot_device random 1 8
+                create_chroot_device urandom 1 9
                 docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {docker_image_name_quoted} \\
                     | sed "/^$/d; s/'/'\\\\''/g; s/^/export '/; s/$/'/" \\
                     > "${{validation_root}}/tmp/openrecon_config_validation_env.sh"
