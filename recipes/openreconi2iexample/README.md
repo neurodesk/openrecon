@@ -1,76 +1,51 @@
-# OpenRecon Image-to-Image Example
+# OpenRecon Image-to-Image Invert Example
 
-`openreconi2iexample` is a lightweight OpenRecon image-in/image-out example.
-It expects already reconstructed MRD image messages and returns simple derived
-label series. It is intended as a readable reference for scanner-safe output
-series handling, not as a clinical segmentation algorithm.
-
-## What It Demonstrates
-
-1. Drain the full OpenRecon input connection before processing.
-2. Group processable magnitude images by `image_series_index`.
-3. Sort slices by physical position using each image position and slice
-   direction.
-4. Compute image matrix, field of view, voxel size, and measured slice spacing.
-5. Allocate all derived output series from one connection-level allocator after
-   input drain.
-6. Create three simple label outputs by thresholding the input volume.
-7. Stamp each derived output with coherent MRD header, Meta, and IceMiniHead
-   identity.
-8. Validate the output series contract before any image is sent back.
-
-The hard pre-send validation is deliberate: if derived series identity is
-ambiguous or collides with the input, the app fails loudly instead of returning
-partial output that a scanner might hide or merge.
+`openreconi2iexample` is a minimal OpenRecon image-in/image-out reference. It
+receives reconstructed MRD image messages, creates inverted copies of magnitude
+images, and names those copies from the source scan plus `-inverted`. It also
+re-emits the original scan as a copied `<source>-original` output series when
+`sendoriginal` is enabled. When
+`sendthresholdmip` is enabled, it thresholds the magnitude volume and sends one
+segmentation maximum intensity projection slice. When `sendinterpolated` is
+enabled, it sends a double-slice-count through-plane interpolated image series.
 
 ## Inputs
 
-The app is designed for image input, not raw k-space reconstruction. Magnitude
-images are processed. Unsupported or non-magnitude images are buffered and
-returned unchanged after validation of the derived outputs.
-
-Each processable image series should contain one 2D slice per MRD image. Slices
-must have matching in-plane dimensions. The wrapper checks that the drained
-slice count is compatible with the MRD header and logs the measured geometry.
+- Reconstructed MRD `ismrmrd.Image` messages.
+- Magnitude images (`IMTYPE_MAGNITUDE` or unset image type) are inverted.
+- Magnitude images are thresholded for the segmentation MIP when
+  `sendthresholdmip` is enabled.
+- Magnitude images are interpolated between slices when `sendinterpolated` is
+  enabled.
+- All image messages can be returned as copied original images.
 
 ## Outputs
 
-For each processable input series, the app returns these derived label series:
+- `<source>-inverted`: inverted magnitude images on `image_series_index = 99`.
+- `<source>-original`: copied input images on `image_series_index = 100` when
+  `sendoriginal` is true.
+- `<source>-mip`: one thresholded segmentation maximum intensity projection
+  slice on `image_series_index = 101` when `sendthresholdmip` is true.
+- `<source>-upsampled`: twice as many magnitude images on
+  `image_series_index = 102` when `sendinterpolated` is true.
 
-| Output role | Rule | Label value |
-| --- | --- | --- |
-| `THRESH_LOW` | voxel intensity greater than the series mean | `1` |
-| `THRESH_MID` | voxel intensity greater than mean plus half a standard deviation | `2` |
-| `THRESH_HIGH` | voxel intensity greater than mean plus one standard deviation | `3` |
+The inverted images keep the source geometry and use the input intensity range:
+`inverted = min(input) + max(input) - input`.
+The threshold MIP uses `mean(input) + 0.5 * std(input)` as the cutoff, then
+projects the binary segmentation across the source image slices.
+The interpolated output keeps the in-plane matrix unchanged and doubles the
+through-plane sample count by inserting midpoint slices between acquired slices.
+The final edge slice is duplicated so the output count is exactly `2 * N`.
 
-Each output is sent as one MRD image per source slice. Source position and
-orientation are preserved, while the output pixels are stored as unsigned
-integer labels.
+## Scanner Notes
 
-## Parameters
-
-| Parameter id | Type | Default | Description |
-| --- | --- | --- | --- |
-| `config` | choice | `openreconi2iexample` | Selects this OpenRecon app. |
-| `sendoriginal` | boolean | `false` | If enabled, returns scanner-safe restamped copies of the original magnitude images as an additional output series. |
-
-## Scanner-Safe Series Identity
-
-Every derived output role receives a fresh `image_series_index` that is distinct
-from observed input series indices and reserved scanner indices. The wrapper
-sets a unique `SeriesInstanceUID`, a stable `SeriesNumberRangeNameUID`,
-`ProtocolName`, `SequenceDescription`, `SeriesDescription`, `ImageTypeValue4`,
-and `DataRole` for each derived role.
-
-If source images include an `IceMiniHead`, the same identity fields and slice
-numbering fields are patched there as well. Before sending, the wrapper logs an
-`OPENRECONI2I_OUTPUT_SERIES_CONTRACT` summary and raises an error if derived
-roles collide, reuse input identity, or disagree between Meta and IceMiniHead.
-
-## Runtime Notes
-
-- Runtime debug paths use `/tmp/share/debug` or `/tmp`; no runtime files are
-  expected under `/home`.
-- This example does not download models or external tools.
-- The threshold outputs are intentionally simple so the recipe stays useful as
-  an OpenRecon integration template.
+- `sendoriginal` is exposed in `OpenReconLabel.json` and defaults to true.
+- `sendthresholdmip` is exposed in `OpenReconLabel.json` and defaults to false.
+- `sendinterpolated` is exposed in `OpenReconLabel.json` and defaults to false.
+- Output names are written to `SeriesDescription`, `SequenceDescription`,
+  `ProtocolName`, `ImageComments`, `SeriesNumberRangeNameUID`, and
+  `SeriesInstanceUID`, and matching values are patched into `IceMiniHead` when
+  source images include one.
+- Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
+  scanners do not append `_None` to the display name.
+- `Keep_image_geometry = 1` is set on all returned image outputs.
