@@ -31,8 +31,8 @@
     "can_use_gpu": false,
     "min_count_required_gpus": 0,
     "min_required_gpu_memory": 0,
-    "min_required_memory": 20048,
-    "min_count_required_cpu_cores": 5,
+    "min_required_memory": 2048,
+    "min_count_required_cpu_cores": 1,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -74,7 +74,14 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Threshold each slice and send a segmentation with a colourmap" },
+      "information": { "en": "Segment the brightest foreground object and send a segmentation" },
+      "default": false
+    },
+    {
+      "id": "segmentationcolormap",
+      "label": { "en": "Segmentation colourmap" },
+      "type": "boolean",
+      "information": { "en": "Add MicroDeltaHotMetal.pal LUT metadata to segmentation outputs" },
       "default": false
     },
     {
