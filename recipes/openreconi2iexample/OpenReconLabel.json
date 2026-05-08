@@ -31,8 +31,8 @@
     "can_use_gpu": false,
     "min_count_required_gpus": 0,
     "min_required_gpu_memory": 0,
-    "min_required_memory": 2048,
-    "min_count_required_cpu_cores": 1,
+    "min_required_memory": 20048,
+    "min_count_required_cpu_cores": 5,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -67,7 +67,7 @@
       "id": "upsampled",
       "label": { "en": "Upsampled" },
       "type": "boolean",
-      "information": { "en": "Interpolate between slices and send twice as many images" },
+      "information": { "en": "Interpolate between slices and send one volume with twice as many slices" },
       "default": false
     },
     {
