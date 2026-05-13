@@ -1,17 +1,17 @@
 {
   "general": {
     "name": { "en": "musclemap" },
-    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "version": "1.3.28",
     "vendor": "neurodesk",
     "information": { "en": "musclemap" },
     "id": "musclemap",
     "regulatory_information": {
       "device_trade_name":"musclemap",
-      "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "production_identifier":"1.3.28",
       "manufacturer_address":"Erlangen, Germany",
       "made_in":"DE",
       "manufacture_date":"2023/02/14",
-      "material_number":"musclemap_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "material_number":"musclemap_1.3.28",
       "gtin":"00860000171212",
       "udi":"(01)00860000171212(21)1.3.0",
       "safety_advices":"",
