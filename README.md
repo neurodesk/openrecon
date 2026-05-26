@@ -27,7 +27,7 @@ artifact(s) to create: `OpenRecon`, `FIRE`, or both.
 Each recipe build now emits two distributable artifacts by default:
 
 - `OpenRecon_<vendor>_<name>_V<version>.zip`
-- `FIRE_<vendor>_<name>_V<version>.zip`
+- `FIRE_<vendor>_<name>_V<version>/`
 
 Optional FIRE overrides can be exported from a recipe `params.sh` when needed:
 
