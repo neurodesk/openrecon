@@ -84,7 +84,7 @@ jobs:
             echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
             echo ""
             printf '%s\n' '# OpenRecon zip: copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
-            printf '%s\n' '# FIRE zip: unpack and install under %CustomerIceProgs%\fire\ as described in INSTALL_FIRE.txt'
+            printf '%s\n' '# FIRE zip: unpack and copy/merge the Ice folder into MriCustomer as described in INSTALL_FIRE.txt'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Generate issue for new container to test and release
         env:
@@ -101,7 +101,7 @@ jobs:
             printf '\n'
             printf '%s\n' 'For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.'
             printf '\n'
-            printf '%s\n' 'For FIRE, unpack the zip and install the `.img`, `fire.ini.template`, and `share` contents under `%CustomerIceProgs%\fire\` as described in `INSTALL_FIRE.txt`.'
+            printf '%s\n' 'For FIRE, unpack the zip and copy/merge the `Ice` folder into `MriCustomer` as described in `INSTALL_FIRE.txt`.'
             printf '\n'
             printf '%s\n' 'once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.'
             printf '\n'

@@ -10,7 +10,7 @@ curl -O https://openrecon.s3.us-east-2.amazonaws.com/{{ env.FIRE_IMAGENAME }}.zi
  
 For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.
 
-For FIRE, unpack the zip and install the `.img`, `fire.ini.template`, and `share` contents under `%CustomerIceProgs%\fire\` as described in `INSTALL_FIRE.txt`.
+For FIRE, unpack the zip and copy/merge the `Ice` folder into `MriCustomer` as described in `INSTALL_FIRE.txt`.
 
 once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.
 

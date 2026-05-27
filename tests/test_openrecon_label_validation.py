@@ -219,15 +219,31 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         install_text = openrecon_build.create_fire_install_text('FIRE_neurodesk_openreconi2iexample_V1.0.57.img', ini_name)
 
         self.assertEqual(ini_name, 'wip_070_fire_openreconi2iexample.ini')
-        self.assertIn('Included scanner-relative paths', install_text)
+        self.assertIn('Included scanner-copy paths', install_text)
         self.assertIn('MriCustomer\\Ice', install_text)
-        self.assertIn('fire\\chroot\\FIRE_neurodesk_openreconi2iexample_V1.0.57.img', install_text)
-        self.assertIn('fire\\wip_070_fire_openreconi2iexample.ini', install_text)
-        self.assertIn('fire\\share\\code', install_text)
+        self.assertIn('Ice\\wip_070_fire_*.ipr', install_text)
+        self.assertIn('Ice\\fire\\chroot\\FIRE_neurodesk_openreconi2iexample_V1.0.57.img', install_text)
+        self.assertIn('Ice\\fire\\wip_070_fire_openreconi2iexample.ini', install_text)
+        self.assertIn('Ice\\fire\\share\\code', install_text)
+        self.assertIn('README.md', install_text)
         self.assertNotIn('fire.ini.template', install_text)
+        self.assertNotIn('IceFireImageAddin', install_text)
         self.assertNotIn('Typical scanner-side locations', install_text)
 
-    def test_fire_bundle_stage_is_mricustomer_ice_relative(self):
+    def test_fire_ini_template_includes_openrecon_connection_section(self):
+        ini_text = openrecon_build.create_fire_ini_template(
+            'FIRE_neurodesk_openreconi2iexample_V1.0.70.img',
+            '/usr/local/bin/start-fire-openrecon.sh',
+            'python3',
+        )
+
+        self.assertIn('[OpenRecon]', ini_text)
+        self.assertIn('hostname=192.168.2.2', ini_text)
+        self.assertIn('port=9002', ini_text)
+        self.assertIn('[chroot]', ini_text)
+        self.assertLess(ini_text.index('[OpenRecon]'), ini_text.index('[chroot]'))
+
+    def test_fire_bundle_stage_puts_scanner_files_under_ice(self):
         label = base_label(
             [
                 config_parameter(values=[{'id': 'openreconi2iexample', 'name': {'en': 'openreconi2iexample'}}]),
@@ -243,6 +259,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             recipe_dir.mkdir()
             (recipe_dir / 'wip_070_fire_IceFireImageAddin_VesselBoost.ipr').write_text('wrong package')
             (recipe_dir / 'wip_070_fire_IceFireImageAddin_VesselBoost.xml').write_text('wrong package')
+            (recipe_dir / 'README.md').write_text('# openreconi2iexample\n')
             fire_img = tmpdir / 'FIRE_neurodesk_openreconi2iexample_V1.0.57.img'
             docs = tmpdir / 'OpenRecon_neurodesk_openreconi2iexample_V1.0.57.pdf'
             fire_img.write_text('img')
@@ -261,16 +278,23 @@ class OpenReconLabelValidationTests(unittest.TestCase):
                 recipe_dir=recipe_dir,
             )
 
-            self.assertTrue((stage_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.ipr').is_file())
-            self.assertTrue((stage_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.xml').is_file())
-            self.assertTrue((stage_dir / 'fire' / 'chroot' / fire_img.name).is_file())
-            self.assertTrue((stage_dir / 'fire' / ini_name).is_file())
-            self.assertTrue((stage_dir / 'fire' / 'config' / 'wip_070_fire_openreconi2iexample.json').is_file())
-            self.assertTrue((stage_dir / 'fire' / 'share' / 'code' / 'PLACEHOLDER.txt').is_file())
+            ice_dir = stage_dir / 'Ice'
+            self.assertTrue((ice_dir / 'wip_070_fire_openreconi2iexample.ipr').is_file())
+            self.assertTrue((ice_dir / 'wip_070_fire_openreconi2iexample.xml').is_file())
+            self.assertTrue((ice_dir / 'fire' / 'chroot' / fire_img.name).is_file())
+            self.assertTrue((ice_dir / 'fire' / ini_name).is_file())
+            self.assertTrue((ice_dir / 'fire' / 'config' / 'wip_070_fire_openreconi2iexample.json').is_file())
+            self.assertTrue((ice_dir / 'fire' / 'share' / 'code' / 'PLACEHOLDER.txt').is_file())
+            self.assertTrue((stage_dir / 'INSTALL_FIRE.txt').is_file())
+            self.assertTrue((stage_dir / 'README.md').is_file())
+            self.assertTrue((stage_dir / docs.name).is_file())
+            self.assertFalse((stage_dir / 'fire').exists())
             self.assertFalse((stage_dir / fire_img.name).exists())
             self.assertFalse((stage_dir / 'share').exists())
             self.assertFalse((stage_dir / 'wip_070_fire_IceFireImageAddin_VesselBoost.ipr').exists())
             self.assertFalse((stage_dir / 'wip_070_fire_IceFireImageAddin_VesselBoost.xml').exists())
+            self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.ipr').exists())
+            self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.xml').exists())
 
     def test_removes_platform_metadata_files_from_fire_bundle_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:

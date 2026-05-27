@@ -34,4 +34,6 @@ Optional FIRE overrides can be exported from a recipe `params.sh` when needed:
 - `fireFreeSpaceMb`
 - `fireStartupCommand`
 - `fireSearchString`
+- `fireHostname`
+- `firePort`
 - `fireBundleName`
