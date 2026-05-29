@@ -78,52 +78,33 @@
       "default": true
     },
     {
-      "id": "segmentgeometry",
-      "label": { "en": "Segment geometry" },
+      "id": "segmentheadergeometry",
+      "label": { "en": "Segment header geometry" },
       "type": "choice",
       "values": [
         {
-          "id": "3d",
-          "name": { "en": "3D series" }
+          "id": "explicit_volume_derived_header",
+          "name": { "en": "Explicit volume, derived image header" }
         },
         {
-          "id": "2d",
-          "name": { "en": "2D images" }
-        }
-      ],
-      "default": "2d",
-      "information": { "en": "Only affects Segment output. 3D sends a scanner-safe per-slice segment series with source geometry and unique slice counters. 2D sends one source-geometry mask image per source image." }
-    },
-    {
-      "id": "detach3ddata",
-      "label": { "en": "Detach 3D data" },
-      "type": "boolean",
-      "information": { "en": "Stamp Segment 3D series with Detached3DData=1. The 3D segment path is sent as per-slice images, not a packed MRD volume. Does not change 2D segment geometry." },
-      "default": false
-    },
-    {
-      "id": "segmentsendorder",
-      "label": { "en": "Segment send order" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "after_originals",
-          "name": { "en": "After originals" }
+          "id": "3d_series_segment_header",
+          "name": { "en": "3D segmentation header" }
         },
         {
-          "id": "before_originals",
-          "name": { "en": "Before originals" }
+          "id": "2d_segment_header",
+          "name": { "en": "2D segmentation header" }
+        },
+        {
+          "id": "2d_derived_image_header",
+          "name": { "en": "2D derived image header" }
+        },
+        {
+          "id": "2d_source_image_header",
+          "name": { "en": "2D source image header" }
         }
       ],
-      "default": "after_originals",
-      "information": { "en": "When Segment and Send original images are both enabled, choose whether segment outputs are sent before or after original outputs." }
-    },
-    {
-      "id": "segmentpostprocessingstamp",
-      "label": { "en": "Stamp segment for postprocessing" },
-      "type": "boolean",
-      "information": { "en": "Send Segment as source-geometry 2D masks with SegmentPostProcessing metadata. This disables Send original images, ignores Detach 3D data, and preserves the source image-type identity used by scanner compose filters." },
-      "default": false
+      "default": "2d_segment_header",
+      "information": { "en": "Choose the geometry and header identity used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity." }
     },
     {
       "id": "segmentationcolormap",
@@ -133,8 +114,22 @@
       "default": false
     },
     {
-      "id": "mip",
-      "label": { "en": "MIP" },
+      "id": "sendreformatsagittal",
+      "label": { "en": "Send sagittal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send explicit sagittal 3D reformat volume(s) of the segment data, one per source group" },
+      "default": false
+    },
+    {
+      "id": "sendreformatcoronal",
+      "label": { "en": "Send coronal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send explicit coronal 3D reformat volume(s) of the segment data, one per source group" },
+      "default": false
+    },
+    {
+      "id": "sendcomputedmip",
+      "label": { "en": "Computed MIP output" },
       "type": "boolean",
       "information": { "en": "Compute and send one maximum intensity projection image" },
       "default": false
