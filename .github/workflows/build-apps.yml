@@ -42,15 +42,24 @@ jobs:
         run: |
           echo "finding bundle files for $APPLICATION:"
           OPENRECON_ZIPFILE=$(find "./recipes/$APPLICATION/openrecon" -maxdepth 1 -type f -iname "OpenRecon_*.zip" 2>/dev/null | head -1)
-          FIRE_ZIPFILE=$(find "./recipes/$APPLICATION/fire" -maxdepth 1 -type f -iname "FIRE_*.zip" 2>/dev/null | head -1)
-          if [ -z "$OPENRECON_ZIPFILE" ] || [ -z "$FIRE_ZIPFILE" ]; then
+          # The build now emits the FIRE bundle as a *folder*; locate it so we can zip it for upload.
+          FIRE_BUNDLE_DIR=$(find "./recipes/$APPLICATION/fire" -maxdepth 1 -type d -iname "FIRE_*" 2>/dev/null | head -1)
+          if [ -z "$OPENRECON_ZIPFILE" ] || [ -z "$FIRE_BUNDLE_DIR" ]; then
             echo "Missing expected build output(s)"
             echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE"
-            echo "FIRE_ZIPFILE=$FIRE_ZIPFILE"
+            echo "FIRE_BUNDLE_DIR=$FIRE_BUNDLE_DIR"
             echo "Available package files:"
-            find "./recipes/$APPLICATION" -maxdepth 3 -type f \( -iname "OpenRecon_*.zip" -o -iname "FIRE_*.zip" \) -print
+            find "./recipes/$APPLICATION" -maxdepth 3 \( -iname "OpenRecon_*.zip" -o -iname "FIRE_*" \) -print
             exit 1
           fi
+          # Zip the FIRE bundle folder for distribution. Archive the folder *contents* so
+          # the layout (Ice/, INSTALL_FIRE.txt, ...) sits at the archive root, matching the
+          # documented install steps and the downstream S3 upload.
+          FIRE_ZIPFILE="${FIRE_BUNDLE_DIR}.zip"
+          FIRE_ZIPFILE_ABS="$(cd "$(dirname "$FIRE_ZIPFILE")" && pwd)/$(basename "$FIRE_ZIPFILE")"
+          rm -f "$FIRE_ZIPFILE_ABS"
+          echo "Zipping FIRE bundle folder '$FIRE_BUNDLE_DIR' -> '$FIRE_ZIPFILE'"
+          ( cd "$FIRE_BUNDLE_DIR" && shopt -s dotglob && 7z a -tzip -mm=Deflate "$FIRE_ZIPFILE_ABS" -- * >/dev/null )
           IMAGENAME=$(basename "$OPENRECON_ZIPFILE" .zip)
           FIRE_IMAGENAME=$(basename "$FIRE_ZIPFILE" .zip)
           echo "OPENRECON_ZIPFILE: $OPENRECON_ZIPFILE"
