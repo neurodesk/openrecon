@@ -78,7 +78,7 @@ jobs:
             echo "FIRE_IMAGENAME=$FIRE_IMAGENAME"
           } >> "$GITHUB_OUTPUT"
       - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722
+        uses: aws-actions/configure-aws-credentials@99214aa6889fcddfa57764031d71add364327e59 # v6.1.3
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
