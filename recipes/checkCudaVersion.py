@@ -1,11 +1,25 @@
+import re
 import subprocess
 from packaging import version
+
+PYTORCH_CUDA_VERSION_PATTERN = re.compile(r'^\d+(?:\.\d+){1,2}$')
 
 def executeCommandDirectly(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     outputString, _ = process.communicate()
     exitCode = process.wait()
     return exitCode, outputString
+
+def _parse_pytorch_cuda_version(outputString):
+    for line in reversed(outputString.splitlines()):
+        value = line.strip()
+        if not value:
+            continue
+        if value in {'TORCH_NOT_FOUND', 'None'}:
+            return None
+        if PYTORCH_CUDA_VERSION_PATTERN.match(value):
+            return value
+    return None
 
 def checkCudaVersionInContainer(dockerImageName, maxCudaVersion="11.8"):
     """
@@ -63,11 +77,10 @@ def checkCudaVersionInContainer(dockerImageName, maxCudaVersion="11.8"):
     if exitCode != 0:
         raise Exception(f"#-> Docker command failed: {outputString}")
     
-    if "TORCH_NOT_FOUND" not in outputString and outputString.strip():
-        torch_cuda_version = outputString.strip()
-        if torch_cuda_version and torch_cuda_version != "None":
-            cuda_versions_found.append(('PyTorch CUDA', torch_cuda_version))
-            print(f"   ✓ PyTorch CUDA version: {torch_cuda_version}")
+    torch_cuda_version = _parse_pytorch_cuda_version(outputString)
+    if torch_cuda_version:
+        cuda_versions_found.append(('PyTorch CUDA', torch_cuda_version))
+        print(f"   ✓ PyTorch CUDA version: {torch_cuda_version}")
     else:
         print("   ℹ️  PyTorch not found or no CUDA support")
     
