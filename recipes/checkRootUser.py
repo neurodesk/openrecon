@@ -6,6 +6,13 @@ def executeCommandDirectly(command):
     exitCode = process.wait()
     return exitCode, outputString
 
+def _parse_user_id(outputString):
+    for line in reversed(outputString.splitlines()):
+        value = line.strip()
+        if value.isdigit():
+            return int(value)
+    raise ValueError(outputString.strip())
+
 def checkRootUserInContainer(dockerImageName):
     """
     Check if the default user in the Docker container is root.
@@ -31,7 +38,7 @@ def checkRootUserInContainer(dockerImageName):
     
     # Parse the user ID
     try:
-        uid = int(outputString.strip())
+        uid = _parse_user_id(outputString)
         print(f"   ℹ️  Container user ID: {uid}")
         
         if uid != 0:
