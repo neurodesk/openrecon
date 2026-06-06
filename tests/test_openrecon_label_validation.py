@@ -1,8 +1,10 @@
 import importlib.util
 import json
 import pathlib
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -322,6 +324,9 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('callable(process)', script)
         self.assertIn('direct_validation_log=/tmp/openrecon_config_direct_validation.log', script)
         self.assertIn('>"${direct_validation_log}" 2>&1', script)
+        self.assertIn('resolve_openrecon_python()', script)
+        self.assertIn('python3.11 python python3', script)
+        self.assertIn('"$OPENRECON_PYTHON" - "$@"', script)
         self.assertIn('Direct container validation failed', script)
         self.assertIn('docker cp "${tmp_container}:/." "${validation_root}"', script)
         self.assertIn('create_chroot_device urandom 1 9', script)
@@ -332,19 +337,145 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('exit "$fallback_status"', script)
         self.assertIn('musclemap', script)
 
+    def test_retries_transient_dind_wrapper_start_failure(self):
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = iter(lines)
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                return next(self.lines)
+
+            def close(self):
+                pass
+
+        class FakeProcess:
+            def __init__(self, lines, returncode):
+                self.stdout = FakeStdout(lines)
+                self.returncode = returncode
+
+            def wait(self):
+                return self.returncode
+
+        failing_lines = [
+            'docker: Error response from daemon: failed to create task for container: '
+            'failed to create shim task: OCI runtime create failed: runc create failed: '
+            'unable to start container process: waiting for init preliminary setup: '
+            'read init-p: connection reset by peer: unknown.\n',
+        ]
+        successful_lines = ['✓ Docker daemon is ready\n']
+        processes = [
+            FakeProcess(failing_lines, 125),
+            FakeProcess(successful_lines, 0),
+        ]
+
+        with mock.patch.object(openrecon_build.subprocess, 'Popen', side_effect=processes) as popen_mock:
+            output = openrecon_build.run_dind_build_process(
+                ['docker', 'run', '--rm', 'docker:24.0-dind'],
+                max_attempts=2,
+                retry_delay_seconds=0,
+            )
+
+        self.assertEqual(popen_mock.call_count, 2)
+        self.assertIn('✓ Docker daemon is ready', output)
+
+    def test_does_not_retry_non_transient_dind_build_failure(self):
+        class FakeStdout:
+            def __iter__(self):
+                return iter(['The command failed for a recipe-specific reason\n'])
+
+            def close(self):
+                pass
+
+        class FakeProcess:
+            stdout = FakeStdout()
+            returncode = 1
+
+            def wait(self):
+                return self.returncode
+
+        with mock.patch.object(openrecon_build.subprocess, 'Popen', return_value=FakeProcess()) as popen_mock:
+            with self.assertRaises(subprocess.CalledProcessError):
+                openrecon_build.run_dind_build_process(
+                    ['docker', 'run', '--rm', 'docker:24.0-dind'],
+                    max_attempts=2,
+                    retry_delay_seconds=0,
+                )
+
+        self.assertEqual(popen_mock.call_count, 1)
+
+    def test_does_not_retry_inner_validation_container_start_failure(self):
+        class FakeStdout:
+            def __iter__(self):
+                return iter([
+                    '🚀 Starting Docker daemon...\n',
+                    '✓ Docker daemon is ready\n',
+                    '🔍 Validating OpenRecon config modules inside image...\n',
+                    'docker: Error response from daemon: failed to create task for container: '
+                    'failed to create shim task: OCI runtime create failed: runc create failed: '
+                    'unable to start container process: waiting for init preliminary setup: '
+                    'read init-p: connection reset by peer: unknown.\n',
+                ])
+
+            def close(self):
+                pass
+
+        class FakeProcess:
+            stdout = FakeStdout()
+            returncode = 1
+
+            def wait(self):
+                return self.returncode
+
+        with mock.patch.object(openrecon_build.subprocess, 'Popen', return_value=FakeProcess()) as popen_mock:
+            with self.assertRaises(subprocess.CalledProcessError):
+                openrecon_build.run_dind_build_process(
+                    ['docker', 'run', '--rm', 'docker:24.0-dind'],
+                    max_attempts=2,
+                    retry_delay_seconds=0,
+                )
+
+        self.assertEqual(popen_mock.call_count, 1)
+
+    def test_openrecon_dockerfile_resolves_python_for_runtime_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dockerfile_path = pathlib.Path(tmpdir) / 'OpenRecon.dockerfile'
+            openrecon_build.write_openrecon_dockerfile(
+                'openmsk:0.1.2',
+                dockerfile_path,
+                base_label([config_parameter()]),
+            )
+
+            dockerfile_text = dockerfile_path.read_text()
+
+        self.assertIn('FROM openmsk:0.1.2', dockerfile_text)
+        self.assertIn('resolve_openrecon_python', dockerfile_text)
+        self.assertIn('python3.11 python python3', dockerfile_text)
+        self.assertIn('OPENRECON_PYTHON', dockerfile_text)
+        self.assertNotIn('exec python3 /opt/code/python-ismrmrd-server/main.py', dockerfile_text)
+
+    def test_python_resolver_preserves_explicit_override(self):
+        resolver = openrecon_build.create_openrecon_python_resolver_script()
+
+        self.assertIn('if command -v "${OPENRECON_PYTHON}"', resolver)
+        self.assertIn('printf "%s\\n" "${OPENRECON_PYTHON}"', resolver)
+        self.assertIn('return 1', resolver)
+
     def test_fire_startup_script_sources_docker_env_before_resolving_python(self):
-        startup_script = openrecon_build.create_fire_startup_script_text(
-            'python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l "$LOG_PATH"'
-        )
+        startup_script = openrecon_build.create_fire_startup_script_text(openrecon_build.get_fire_server_command())
 
         env_source_index = startup_script.index('. /etc/openrecon-fire-env.sh')
-        python_validation_index = startup_script.index('command -v python3')
+        python_validation_index = startup_script.index('command -v "$OPENRECON_PYTHON"')
         startup_exec_index = startup_script.index(
-            "exec sh -c 'python3 /opt/code/python-ismrmrd-server/main.py"
+            'exec sh -c \'"$OPENRECON_PYTHON" /opt/code/python-ismrmrd-server/main.py'
         )
 
         self.assertLess(env_source_index, python_validation_index)
         self.assertLess(env_source_index, startup_exec_index)
+        self.assertIn('resolve_openrecon_python()', startup_script)
+        self.assertIn('python3.11 python python3', startup_script)
         self.assertIn('OPENRECON_FIRE_VALIDATE_STARTUP', startup_script)
 
     def test_fire_startup_executable_supports_conda_override(self):

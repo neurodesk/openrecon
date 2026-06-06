@@ -20,6 +20,138 @@ if hasattr(sys.stdout, 'reconfigure'):
 FIRE_ENV_SCRIPT_PATH = '/etc/openrecon-fire-env.sh'
 FIRE_STARTUP_VALIDATION_ENV = 'OPENRECON_FIRE_VALIDATE_STARTUP'
 OPENRECON_JSON_CONFIG_VERSION = '1.1.0'
+DIND_RUN_ATTEMPTS_ENV = 'OPENRECON_DIND_RUN_ATTEMPTS'
+DIND_RETRY_DELAY_SECONDS_ENV = 'OPENRECON_DIND_RETRY_DELAY_SECONDS'
+OPENRECON_PYTHON_CANDIDATES = ('python3.11', 'python', 'python3')
+
+
+def get_positive_int_env(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        print(f'⚠️  Ignoring invalid {name}={raw_value!r}; using {default}')
+        return default
+    if value < 1:
+        print(f'⚠️  Ignoring invalid {name}={raw_value!r}; using {default}')
+        return default
+    return value
+
+
+def get_nonnegative_float_env(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        value = float(raw_value)
+    except ValueError:
+        print(f'⚠️  Ignoring invalid {name}={raw_value!r}; using {default}')
+        return default
+    if value < 0:
+        print(f'⚠️  Ignoring invalid {name}={raw_value!r}; using {default}')
+        return default
+    return value
+
+
+def is_transient_dind_wrapper_start_failure(output):
+    output_lower = output.lower()
+    return (
+        'docker: error response from daemon' in output_lower
+        and 'failed to create task for container' in output_lower
+        and 'waiting for init preliminary setup' in output_lower
+        and 'starting docker daemon' not in output_lower
+    )
+
+
+def run_dind_build_process(args, max_attempts=None, retry_delay_seconds=None):
+    if max_attempts is None:
+        max_attempts = get_positive_int_env(DIND_RUN_ATTEMPTS_ENV, 3)
+    if retry_delay_seconds is None:
+        retry_delay_seconds = get_nonnegative_float_env(DIND_RETRY_DELAY_SECONDS_ENV, 5)
+
+    combined_output_lines = []
+    for attempt in range(1, max_attempts + 1):
+        if max_attempts > 1:
+            print(f'🐳 Starting DinD build container (attempt {attempt}/{max_attempts})...')
+
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            universal_newlines=True,
+        )
+
+        output_lines = []
+        try:
+            for line in process.stdout:
+                output_lines.append(line)
+                combined_output_lines.append(line)
+                print(line, end='')
+
+            process.wait()
+            output = ''.join(output_lines)
+            if process.returncode == 0:
+                return ''.join(combined_output_lines)
+
+            if attempt < max_attempts and is_transient_dind_wrapper_start_failure(output):
+                print(
+                    '⚠️  DinD build container failed to start with a transient Docker runtime error; '
+                    f'retrying in {retry_delay_seconds:g}s.'
+                )
+                if retry_delay_seconds:
+                    time.sleep(retry_delay_seconds)
+                continue
+
+            raise subprocess.CalledProcessError(
+                process.returncode,
+                args,
+                output=''.join(combined_output_lines),
+            )
+        finally:
+            if process.stdout:
+                process.stdout.close()
+
+    raise subprocess.CalledProcessError(1, args, output=''.join(combined_output_lines))
+
+
+def create_openrecon_python_resolver_script():
+    candidates = ' '.join(shlex.quote(candidate) for candidate in OPENRECON_PYTHON_CANDIDATES)
+    return textwrap.dedent(
+        f'''\
+        resolve_openrecon_python() {{
+            if [ -n "${{OPENRECON_PYTHON:-}}" ]; then
+                if command -v "${{OPENRECON_PYTHON}}" >/dev/null 2>&1; then
+                    printf "%s\\n" "${{OPENRECON_PYTHON}}"
+                    return 0
+                fi
+                return 1
+            fi
+            for python_exe in {candidates}; do
+                if command -v "${{python_exe}}" >/dev/null 2>&1; then
+                    printf "%s\\n" "${{python_exe}}"
+                    return 0
+                fi
+            done
+            return 1
+        }}
+        OPENRECON_PYTHON="$(resolve_openrecon_python)"
+        export OPENRECON_PYTHON
+        '''
+    )
+
+
+def create_openrecon_python_runtime_command(log_path):
+    return textwrap.dedent(
+        f'''\
+        set -eu
+        /usr/sbin/ldconfig
+        {create_openrecon_python_resolver_script()}
+        exec "$OPENRECON_PYTHON" /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l={log_path}
+        '''
+    )
 
 
 def validateJson(jsonFilePath, schemaFilePath):
@@ -183,7 +315,7 @@ def create_config_module_validation_script(docker_image_name, config_module_name
         config_modules_json={config_modules_json}
         direct_validation_log=/tmp/openrecon_config_direct_validation.log
         rm -f "${{direct_validation_log}}"
-        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c 'cd /opt/code/python-ismrmrd-server && python3 - "$@"' sh "$config_modules_json" >"${{direct_validation_log}}" 2>&1 <<'PY'
+        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c '{create_openrecon_python_resolver_script()}cd /opt/code/python-ismrmrd-server && "$OPENRECON_PYTHON" - "$@"' sh "$config_modules_json" >"${{direct_validation_log}}" 2>&1 <<'PY'
 {validation_python}PY
         then
             cat "${{direct_validation_log}}"
@@ -220,7 +352,7 @@ def create_config_module_validation_script(docker_image_name, config_module_name
                     | sed "/^$/d; s/'/'\\\\''/g; s/^/export '/; s/$/'/" \\
                     > "${{validation_root}}/tmp/openrecon_config_validation_env.sh"
 
-                chroot "${{validation_root}}" /bin/sh -c '. /tmp/openrecon_config_validation_env.sh && cd /opt/code/python-ismrmrd-server && PYTHONHASHSEED=0 python3 - "$@"' sh "$config_modules_json" <<'PY'
+                chroot "${{validation_root}}" /bin/sh -c '. /tmp/openrecon_config_validation_env.sh && {create_openrecon_python_resolver_script()}cd /opt/code/python-ismrmrd-server && PYTHONHASHSEED=0 "$OPENRECON_PYTHON" - "$@"' sh "$config_modules_json" <<'PY'
 {validation_python}PY
             ); then
                 tmp_container=""
@@ -283,11 +415,8 @@ def write_openrecon_dockerfile(base_docker_image, dockerfile_path, json_data):
     with open(dockerfile_path, 'w') as file:
         file.write(f'FROM {base_docker_image}\n')
         file.write(f'{label_str}\n')
-        file.write(
-            'CMD [ "/bin/bash", "-c", '
-            '"/usr/sbin/ldconfig && exec python3 /opt/code/python-ismrmrd-server/main.py '
-            '-v -H=0.0.0.0 -p=9002 -l=/tmp/python-ismrmrd-server.log"]'
-        )
+        runtime_command = create_openrecon_python_runtime_command('/tmp/python-ismrmrd-server.log')
+        file.write(f'CMD {json.dumps(["/bin/bash", "-c", runtime_command])}\n')
 
 
 def detect_docs_file():
@@ -349,7 +478,7 @@ def get_fire_server_command():
     override = os.getenv('fireStartupCommand')
     if override and override.strip():
         return override.replace('{log_path}', '$LOG_PATH')
-    return 'python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l "$LOG_PATH"'
+    return '"$OPENRECON_PYTHON" /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l "$LOG_PATH"'
 
 
 def is_shell_assignment_token(token):
@@ -378,6 +507,24 @@ def create_fire_startup_script_text(fire_server_command):
     fire_startup_executable = get_fire_startup_executable(fire_server_command)
     fire_startup_executable_quoted = shlex.quote(fire_startup_executable)
     validation_env_expansion = '${' + FIRE_STARTUP_VALIDATION_ENV + ':-0}'
+    if fire_startup_executable in {'$OPENRECON_PYTHON', '${OPENRECON_PYTHON}'}:
+        validation_script = textwrap.dedent(
+            '''\
+            command -v "$OPENRECON_PYTHON" >/dev/null 2>&1
+            exit $?
+            '''
+        )
+    else:
+        validation_script = textwrap.dedent(
+            f'''\
+            if [ -x {fire_startup_executable_quoted} ]; then
+                exit 0
+            fi
+            command -v {fire_startup_executable_quoted} >/dev/null 2>&1
+            exit $?
+            '''
+        )
+    validation_script = textwrap.indent(validation_script.rstrip(), '    ' * 3)
 
     return textwrap.dedent(
         f'''\
@@ -391,12 +538,9 @@ def create_fire_startup_script_text(fire_server_command):
         export LOG_PATH
         export FIRE_LOG_PATH="$LOG_PATH"
         /usr/sbin/ldconfig
+        {create_openrecon_python_resolver_script()}
         if [ "{validation_env_expansion}" = "1" ]; then
-            if [ -x {fire_startup_executable_quoted} ]; then
-                exit 0
-            fi
-            command -v {fire_startup_executable_quoted} >/dev/null 2>&1
-            exit $?
+{validation_script}
         fi
         exec sh -c {fire_command_quoted}
         '''
@@ -1067,31 +1211,18 @@ def build_artifacts_in_dind(
         '''
     )
 
-    process = subprocess.Popen(
-        [
-            'docker', 'run', '--rm', '--privileged',
-            '--platform', 'linux/amd64',
-            '-v', f'{volume_name}:/var/lib/docker',
-            '-v', f'{os.getcwd()}:/workspace',
-            '-w', '/workspace',
-            docker_client_image,
-            'sh', '-c', docker_build_script,
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-        universal_newlines=True,
-    )
+    dind_run_args = [
+        'docker', 'run', '--rm', '--privileged',
+        '--platform', 'linux/amd64',
+        '-v', f'{volume_name}:/var/lib/docker',
+        '-v', f'{os.getcwd()}:/workspace',
+        '-w', '/workspace',
+        docker_client_image,
+        'sh', '-c', docker_build_script,
+    ]
 
-    output_lines = []
     try:
-        for line in process.stdout:
-            output_lines.append(line)
-            print(line, end='')
-
-        process.wait()
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, process.args, output=''.join(output_lines))
+        run_dind_build_process(dind_run_args)
     finally:
         print(f'\n🗑️  Cleaning up temporary Docker volume: {volume_name}')
         subprocess.run(['docker', 'volume', 'rm', '-f', volume_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
