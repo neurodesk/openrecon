@@ -6,12 +6,8 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
-#This prevents the sometimes stuck apt process from stopping the build
-if [ -f "/var/lib/apt/lists/lock" ]; then
-  sudo rm /var/lib/apt/lists/lock
-  sudo rm /var/cache/apt/archives/lock
-  sudo rm /var/lib/dpkg/lock*
-fi
+# This prevents a sometimes stuck apt process from stopping the build.
+sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock*
 
 # check if aws cli is installed
 if ! command -v aws &>/dev/null; then
