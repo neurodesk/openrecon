@@ -6,6 +6,13 @@ on:
       applications:
         required: true
         type: string
+  workflow_dispatch:
+    inputs:
+      applications:
+        description: JSON array of application names to build
+        required: true
+        default: '["musclemap"]'
+        type: string
 
 jobs:
   build:
