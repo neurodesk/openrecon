@@ -325,7 +325,9 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('direct_validation_log=/tmp/openrecon_config_direct_validation.log', script)
         self.assertIn('>"${direct_validation_log}" 2>&1', script)
         self.assertIn('resolve_openrecon_python()', script)
-        self.assertIn('python3.11 python python3', script)
+        self.assertIn('python3 python python3.11', script)
+        self.assertIn("can_import_openrecon_python_requirements", script)
+        self.assertIn('"import ismrmrd"', script)
         self.assertIn('"$OPENRECON_PYTHON" - "$@"', script)
         self.assertIn('Direct container validation failed', script)
         self.assertIn('docker cp "${tmp_container}:/." "${validation_root}"', script)
@@ -452,7 +454,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
 
         self.assertIn('FROM openmsk:0.1.2', dockerfile_text)
         self.assertIn('resolve_openrecon_python', dockerfile_text)
-        self.assertIn('python3.11 python python3', dockerfile_text)
+        self.assertIn('python3 python python3.11', dockerfile_text)
         self.assertIn('OPENRECON_PYTHON', dockerfile_text)
         self.assertNotIn('exec python3 /opt/code/python-ismrmrd-server/main.py', dockerfile_text)
 
@@ -460,6 +462,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         resolver = openrecon_build.create_openrecon_python_resolver_script()
 
         self.assertIn('if command -v "${OPENRECON_PYTHON}"', resolver)
+        self.assertIn('can_import_openrecon_python_requirements "${OPENRECON_PYTHON}"', resolver)
         self.assertIn('printf "%s\\n" "${OPENRECON_PYTHON}"', resolver)
         self.assertIn('return 1', resolver)
 
@@ -475,7 +478,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertLess(env_source_index, python_validation_index)
         self.assertLess(env_source_index, startup_exec_index)
         self.assertIn('resolve_openrecon_python()', startup_script)
-        self.assertIn('python3.11 python python3', startup_script)
+        self.assertIn('python3 python python3.11', startup_script)
         self.assertIn('OPENRECON_FIRE_VALIDATE_STARTUP', startup_script)
 
     def test_fire_startup_executable_supports_conda_override(self):

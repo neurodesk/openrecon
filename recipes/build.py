@@ -22,7 +22,7 @@ FIRE_STARTUP_VALIDATION_ENV = 'OPENRECON_FIRE_VALIDATE_STARTUP'
 OPENRECON_JSON_CONFIG_VERSION = '1.1.0'
 DIND_RUN_ATTEMPTS_ENV = 'OPENRECON_DIND_RUN_ATTEMPTS'
 DIND_RETRY_DELAY_SECONDS_ENV = 'OPENRECON_DIND_RETRY_DELAY_SECONDS'
-OPENRECON_PYTHON_CANDIDATES = ('python3.11', 'python', 'python3')
+OPENRECON_PYTHON_CANDIDATES = ('python3', 'python', 'python3.11')
 
 
 def get_positive_int_env(name, default):
@@ -121,16 +121,20 @@ def create_openrecon_python_resolver_script():
     candidates = ' '.join(shlex.quote(candidate) for candidate in OPENRECON_PYTHON_CANDIDATES)
     return textwrap.dedent(
         f'''\
+        can_import_openrecon_python_requirements() {{
+            "$1" -c "import ismrmrd" >/dev/null 2>&1
+        }}
+
         resolve_openrecon_python() {{
             if [ -n "${{OPENRECON_PYTHON:-}}" ]; then
-                if command -v "${{OPENRECON_PYTHON}}" >/dev/null 2>&1; then
+                if command -v "${{OPENRECON_PYTHON}}" >/dev/null 2>&1 && can_import_openrecon_python_requirements "${{OPENRECON_PYTHON}}"; then
                     printf "%s\\n" "${{OPENRECON_PYTHON}}"
                     return 0
                 fi
                 return 1
             fi
             for python_exe in {candidates}; do
-                if command -v "${{python_exe}}" >/dev/null 2>&1; then
+                if command -v "${{python_exe}}" >/dev/null 2>&1 && can_import_openrecon_python_requirements "${{python_exe}}"; then
                     printf "%s\\n" "${{python_exe}}"
                     return 0
                 fi
