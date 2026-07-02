@@ -110,14 +110,25 @@ jobs:
           {
             printf '%s\n' "The OpenRecon and FIRE bundles were successfully built by @${{ github.actor }}. To test them, download:"
             printf '\n'
-            printf '%s\n' '```'
+            printf '%s\n' '```bash'
             printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
-            printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
             printf '%s\n' '```'
             printf '\n'
             printf '%s\n' 'For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.'
             printf '\n'
-            printf '%s\n' 'For FIRE, unpack the zip and copy/merge the `Ice` folder into `MriCustomer` as described in `INSTALL_FIRE.txt`.'
+            printf '%s\n' 'On scanners that can download files directly, open an administrator PowerShell, navigate to that `incoming` folder, and run:'
+            printf '\n'
+            printf '%s\n' '```powershell'
+            printf '%s\n' "curl.exe -k -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'For FIRE:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'To install the FIRE package, unpack the zip and copy/merge the `Ice` folder into `MriCustomer` as described in `INSTALL_FIRE.txt`.'
             printf '\n'
             printf '%s\n' 'once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.'
             printf '\n'
