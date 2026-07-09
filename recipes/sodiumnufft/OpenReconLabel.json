@@ -49,10 +49,20 @@
     },
     {
       "id": "trajectoryfile",
-      "label": { "en": "Trajectory file" },
-      "type": "string",
-      "default": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
-      "information": { "en": "HDF5 trajectory file path used when the MRD data does not contain embedded trajectories. Defaults to the bundled 23NA_n50 trajectory." }
+      "label": { "en": "Bundled trajectory" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+          "name": { "en": "23Na n28" }
+        },
+        {
+          "id": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+          "name": { "en": "23Na n50" }
+        }
+      ],
+      "default": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+      "information": { "en": "Bundled HDF5 trajectory used when the MRD data does not contain embedded trajectories." }
     },
     {
       "id": "trajectorysampleoffset",
