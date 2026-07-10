@@ -108,7 +108,7 @@
     <!-- Remove all functors between RawEmitter (or ImageEmitter) and Injector -->
     <RemoveIntermediateFunctors>false</RemoveIntermediateFunctors>
     <!-- If true, disable flip/rotation of images to DICOM standard views (i.e. disable NormOrientation) -->
-    <DisableNormOrientation>false</DisableNormOrientation>
+    <DisableNormOrientation>true</DisableNormOrientation>
     <!-- If true, do not zero out ADC points indicated by MDH PreCutoff and PostCutoff -->
     <DisableMDHCutoffZeroing>true</DisableMDHCutoffZeroing>
     <!-- If true, create 16-bit DICOMs -->
