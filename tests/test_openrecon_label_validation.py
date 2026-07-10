@@ -376,6 +376,44 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('exit "$fallback_status"', script)
         self.assertIn('musclemap', script)
 
+    def test_fire_rootfs_creates_required_device_nodes_before_validation(self):
+        with (
+            mock.patch.object(openrecon_build, 'ensure_dind_image_available'),
+            mock.patch.object(openrecon_build, 'run_dind_build_process') as run_dind_mock,
+            mock.patch.object(openrecon_build.subprocess, 'check_output'),
+            mock.patch.object(openrecon_build.subprocess, 'run'),
+        ):
+            openrecon_build.build_artifacts_in_dind(
+                docker_image_name='openrecon_test:v1.0.0',
+                dockerfile_path='OpenRecon.dockerfile',
+                openrecon_tar_name='OpenRecon_test.tar',
+                fire_img_name='FIRE_test.img',
+                fire_rootfs_tar_name='FIRE_test.rootfs.tar',
+                create_openrecon_package=False,
+                create_fire_package=True,
+                use_local_image=False,
+                base_docker_image='base:test',
+                force_local_only=False,
+                keep_cache=False,
+                fire_free_space_mb=50,
+                fire_server_command=openrecon_build.get_fire_server_command(),
+                startup_script_path='/usr/local/bin/start-fire-openrecon.sh',
+                validate_default_runtime=True,
+                config_module_names=['test'],
+            )
+
+        docker_build_script = run_dind_mock.call_args.args[0][-1]
+        fire_device_path = 'device_path="${mount_dir}/dev/${device_name}"'
+        fire_validation = 'echo "🔍 Validating FIRE chroot contents..."'
+
+        self.assertIn('mkdir -p "${mount_dir}/dev"', docker_build_script)
+        self.assertIn(fire_device_path, docker_build_script)
+        self.assertIn('create_chroot_device null 1 3', docker_build_script)
+        self.assertIn('create_chroot_device zero 1 5', docker_build_script)
+        self.assertIn('create_chroot_device random 1 8', docker_build_script)
+        self.assertIn('create_chroot_device urandom 1 9', docker_build_script)
+        self.assertLess(docker_build_script.index(fire_device_path), docker_build_script.index(fire_validation))
+
     def test_retries_transient_dind_wrapper_start_failure(self):
         class FakeStdout:
             def __init__(self, lines):

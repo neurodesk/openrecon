@@ -1185,6 +1185,21 @@ def build_artifacts_in_dind(
             cp -a "${{extract_dir}}"/. "${{mount_dir}}"/
             rm -rf "${{extract_dir}}"
 
+            mkdir -p "${{mount_dir}}/dev"
+            create_chroot_device() {{
+                device_name="$1"
+                device_major="$2"
+                device_minor="$3"
+                device_path="${{mount_dir}}/dev/${{device_name}}"
+                if [ ! -e "${{device_path}}" ]; then
+                    mknod -m 666 "${{device_path}}" c "${{device_major}}" "${{device_minor}}"
+                fi
+            }}
+            create_chroot_device null 1 3
+            create_chroot_device zero 1 5
+            create_chroot_device random 1 8
+            create_chroot_device urandom 1 9
+
             mkdir -p "${{mount_dir}}/{startup_script_dir_rel}"
             mkdir -p "${{mount_dir}}/tmp/share/code" "${{mount_dir}}/tmp/share/dependency" "${{mount_dir}}/tmp/share/log"
             mkdir -p "${{mount_dir}}/etc"
