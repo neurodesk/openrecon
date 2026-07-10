@@ -16,7 +16,10 @@
 
 The output is a derived magnitude series named
 `<protocol>_sodiumnufft`. If the protocol name is unavailable, the fallback
-series name is `sodiumnufft`.
+series name is `sodiumnufft`. The NUFFT is computed on an isotropic grid, and
+the scanner-facing output preserves that reconstructed slice count. The output
+is emitted as one 2D image message per reconstructed slice so the scanner can
+store the stack as one derived series instead of splitting a packed volume.
 
 ## Input Requirements
 
@@ -49,7 +52,7 @@ reconstruction field of view in cm before the adjoint NUFFT.
 | config | `config` | choice | `sodiumnufft` | Selects the MRD server configuration. |
 | Bundled trajectory | `trajectoryfile` | choice | `/opt/sodiumnufft/23Na_n28_trajectory.h5` | Bundled trajectory used when trajectories are not embedded in the MRD data. Choices: n28 or n50 bundled HDF5 path. |
 | Trajectory sample offset | `trajectorysampleoffset` | integer | `0` | Number of leading trajectory samples to skip before pairing the external trajectory with the raw data. |
-| Matrix size | `matrixsize` | integer | `128` | Final isotropic reconstruction matrix. |
+| Matrix size | `matrixsize` | integer | `64` | Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output slice count. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in cm. |
 | Reject weak samples | `rejectbadreadouts` | boolean | `true` | Zero low-signal sample columns using the histogram rule from the standalone script. |
 | Reject sigma | `badreadoutsigma` | string | `3.0` | Sigma multiplier used for weak-sample rejection. |
@@ -65,8 +68,20 @@ reconstruction field of view in cm before the adjoint NUFFT.
 
 - The reconstruction is implemented for raw k-space input. If image data is
   sent to this app, the images are returned unchanged.
-- The derived output is magnitude-only.
+- The derived output is magnitude-only and is emitted as one 2D image per
+  reconstructed slice with the requested reconstruction FOV and slice spacing.
 - `maxcoils` is mainly useful for faster smoke tests and debugging.
 - The container does not store runtime files under `/home`; use mounted paths
   such as `/tmp` or another accessible filesystem location for external
   trajectory files.
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/sodiumnufft
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

@@ -79,8 +79,8 @@
       "type": "int",
       "minimum": 32,
       "maximum": 512,
-      "default": 128,
-      "information": { "en": "Final isotropic reconstruction matrix." }
+      "default": 64,
+      "information": { "en": "Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output slice count." }
     },
     {
       "id": "fovcm",
