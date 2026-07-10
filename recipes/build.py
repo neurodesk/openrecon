@@ -955,6 +955,19 @@ def copy_optional_fire_ini_files(stage_dir, recipe_dir):
     return copied_files
 
 
+def write_fire_workflow_files(ice_dir, recipe_dir, workflow_base, default_config_id, fire_ini_name):
+    for extension, generated_text in {
+        '.ipr': create_fire_ipr_text(),
+        '.xml': create_fire_workflow_xml_text(default_config_id, fire_ini_name),
+    }.items():
+        source_path = recipe_dir / f'{workflow_base}{extension}'
+        target_path = ice_dir / source_path.name
+        if source_path.is_file():
+            shutil.copy2(source_path, target_path)
+        else:
+            target_path.write_text(generated_text)
+
+
 def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_name, fire_ini_text, install_text, docs_source_path, json_data, package_name, recipe_dir=None):
     if recipe_dir is None:
         recipe_dir = Path.cwd()
@@ -990,8 +1003,7 @@ def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_name, fire_ini_te
     copy_optional_fire_ini_files(ice_dir, recipe_dir)
     workflow_base = get_fire_workflow_base(package_name)
     default_config_id = get_default_openrecon_config_id(json_data)
-    (ice_dir / f'{workflow_base}.ipr').write_text(create_fire_ipr_text())
-    (ice_dir / f'{workflow_base}.xml').write_text(create_fire_workflow_xml_text(default_config_id, fire_ini_name))
+    write_fire_workflow_files(ice_dir, recipe_dir, workflow_base, default_config_id, fire_ini_name)
     write_fire_config_json_files(ice_dir, recipe_dir, json_data)
 
 

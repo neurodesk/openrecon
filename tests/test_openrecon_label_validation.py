@@ -298,6 +298,43 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.ipr').exists())
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.xml').exists())
 
+    def test_fire_bundle_stage_uses_exact_recipe_workflow_file_overrides(self):
+        label = base_label(
+            [
+                config_parameter(values=[{'id': 'sodiumnufft', 'name': {'en': 'sodiumnufft'}}]),
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = pathlib.Path(tmpdir)
+            stage_dir = tmpdir / 'stage'
+            recipe_dir = tmpdir / 'recipe'
+            stage_dir.mkdir()
+            recipe_dir.mkdir()
+            (recipe_dir / 'wip_070_fire_sodiumnufft.xml').write_text('<custom-workflow />\n')
+            (recipe_dir / 'wip_070_fire_sodiumnufft.ipr').write_text('<custom-ipr />\n')
+            fire_img = tmpdir / 'FIRE_neurodesk_sodiumnufft_V0.1.4.img'
+            docs = tmpdir / 'OpenRecon_neurodesk_sodiumnufft_V0.1.4.pdf'
+            fire_img.write_text('img')
+            docs.write_text('pdf')
+
+            openrecon_build.build_fire_bundle_stage(
+                stage_dir=stage_dir,
+                fire_img_path=fire_img,
+                fire_ini_name=openrecon_build.get_fire_ini_filename('sodiumnufft'),
+                fire_ini_text='[chroot]\n',
+                install_text='install\n',
+                docs_source_path=docs,
+                json_data=label,
+                package_name='sodiumnufft',
+                recipe_dir=recipe_dir,
+            )
+
+            ice_dir = stage_dir / 'Ice'
+            self.assertEqual((ice_dir / 'wip_070_fire_sodiumnufft.xml').read_text(), '<custom-workflow />\n')
+            self.assertEqual((ice_dir / 'wip_070_fire_sodiumnufft.ipr').read_text(), '<custom-ipr />\n')
+            self.assertTrue((ice_dir / 'fire' / 'config' / 'wip_070_fire_sodiumnufft.json').is_file())
+
     def test_removes_platform_metadata_files_from_fire_bundle_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             bundle_dir = pathlib.Path(tmpdir) / 'bundle'
