@@ -3,3 +3,8 @@
 export toolName=meica
 export version=4.0.1
 export baseDockerImage=vnmd/${toolName}_${version}
+# this image is build based on 
+# https://github.com/neurodesk/neurocontainers/blob/main/recipes/meica/build.yaml
+# source .venv/bin/activate
+# cd recipes/meica  
+# /bin/bash ../build.sh --local-cache
