@@ -41,8 +41,10 @@ jobs:
       - name: Build recipes
         run: |
           echo "APPLICATION: $APPLICATION"
+          python3 -m venv .venv
+          source .venv/bin/activate
           cd "recipes/$APPLICATION"
-          command -v python
+          command -v python3
           BUILD_PACKAGE_SELECTION=both /bin/bash ../build.sh
       - name: Set artifact variables
         id: IMAGEVARS

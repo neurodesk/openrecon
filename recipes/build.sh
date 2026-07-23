@@ -2,6 +2,9 @@
 set -e
 #This script will run inside the tool directory
 
+BUILD_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPOSITORY_ROOT=$(cd -- "$BUILD_SCRIPT_DIR/.." && pwd)
+
 # Command-line options
 IGNORE_MDPDF=false
 FORCE_LOCAL_CACHE=false
@@ -40,6 +43,27 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+PYTHON_BIN=$(command -v python3 || true)
+if [ -z "$PYTHON_BIN" ] || ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix else 1)'; then
+    echo "Error: neurorecon must be built from an active Python virtual environment."
+    echo ""
+    echo "From the repository root, run:"
+    echo "  python3 -m venv .venv"
+    echo "  source .venv/bin/activate"
+    echo ""
+    echo "Then return to the recipe directory and rerun ../build.sh."
+    echo "Resolved Python: ${PYTHON_BIN:-not found}"
+    exit 1
+fi
+
+if ! "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+    echo "Error: the active virtual environment does not contain pip."
+    echo "Recreate it from $REPOSITORY_ROOT with: python3 -m venv .venv"
+    exit 1
+fi
+
+echo "Using virtual-environment Python: $PYTHON_BIN"
 
 # When running offline with a forced local cache, allow the user to limit which
 # distributable package(s) should be created.
@@ -117,37 +141,13 @@ cleanup() {
 # Set trap to call cleanup on EXIT, INT (Ctrl+C), TERM, and other signals
 trap cleanup EXIT INT TERM
 
-# check and install dependencies
-if ! command -v pip3 &> /dev/null; then
-    #check if on MacOS
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        brew install python3
-    fi
-    # check if on Linux
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # check if apt is available
-        if command -v apt &> /dev/null; then
-            sudo apt update
-            sudo apt install -y python3 python3-pip
-        # check if yum is available
-        elif command -v yum &> /dev/null; then
-            sudo yum install -y python3 python3-pip
-        # check if dnf is available
-        elif command -v dnf &> /dev/null; then
-            sudo dnf install -y python3 python3-pip
-        else
-            echo "Error: No package manager found. Please install Python 3 and pip manually."
-            exit 1
-        fi
-    fi
+# Check and install Python dependencies in the active virtual environment.
+if ! "$PYTHON_BIN" -m pip show jsonschema &> /dev/null; then
+    "$PYTHON_BIN" -m pip install jsonschema
 fi
 
-if ! pip3 show jsonschema &> /dev/null; then
-    pip3 install jsonschema
-fi
-
-if ! pip3 show packaging &> /dev/null; then
-    pip3 install packaging
+if ! "$PYTHON_BIN" -m pip show packaging &> /dev/null; then
+    "$PYTHON_BIN" -m pip install packaging
 fi
 
 if ! command -v 7z &> /dev/null; then
@@ -370,7 +370,7 @@ echo "baseDockerImage: $baseDockerImage"
 
 # build zip file
 echo "🚀 Starting Python build pipeline..."
-python3 -u ../build.py
+"$PYTHON_BIN" -u "$BUILD_SCRIPT_DIR/build.py"
 
 # Note: Backup restoration now handled by cleanup trap function
 # This ensures restoration even if script is interrupted

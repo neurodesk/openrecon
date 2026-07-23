@@ -1,4 +1,5 @@
 .DS_Store
+.venv/
 *.zip
 *.tar
 __pycache__/
