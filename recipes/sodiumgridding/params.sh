@@ -1,11 +1,11 @@
 #!/bin/bash
 # build image here: https://github.com/NeuroDesk/neurocontainers and add mrd server instructions: https://www.neurodesk.org/docs/getting-started/neurocontainers/openrecon/
 # specify the repostiory and name of the docker image: https://hub.docker.com/orgs/vnmd/repositories
-export toolName=sodiumnufft
-export version=0.1.10
+export toolName=sodiumgridding
+export version=0.1.1
 export baseDockerImage=vnmd/${toolName}_${version}
 # this image is build based on 
-# https://github.com/neurodesk/neurocontainers/blob/main/recipes/sodiumnufft/build.yaml
+# https://github.com/neurodesk/neurocontainers/blob/main/recipes/sodiumgridding/build.yaml
 # source .venv/bin/activate
-# cd recipes/sodiumnufft
+# cd recipes/sodiumgridding
 # /bin/bash ../build.sh --local-cache
