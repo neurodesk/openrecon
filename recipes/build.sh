@@ -176,16 +176,15 @@ fi
 
 if ! command -v mdpdf &> /dev/null; then
     # check if directory $HOME/.nvm exists:
-    if [ ! -d "$HOME/.nvm" ]; then
+    export NVM_DIR="$HOME/.nvm"
+    if [ ! -d "$NVM_DIR" ]; then
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
-        source ~/.bashrc
-        nvm list-remote
-        nvm install v22.3.0
-        nvm list
-    else
-        export NVM_DIR="$HOME/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
     fi
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+    nvm list-remote
+    nvm install v22.3.0
+    nvm list
     npm install mdpdf -g
 fi
 
