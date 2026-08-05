@@ -174,18 +174,35 @@ if ! command -v 7z &> /dev/null; then
     fi
 fi
 
-if ! command -v mdpdf &> /dev/null; then
-    # check if directory $HOME/.nvm exists:
-    export NVM_DIR="$HOME/.nvm"
-    if [ ! -d "$NVM_DIR" ]; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+if [[ "$IGNORE_MDPDF" != "true" && -f "README.md" && ! -f "README.pdf" ]] && \
+    ! command -v mdpdf &> /dev/null; then
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+    # NVM-installed commands are not visible in a fresh non-interactive shell
+    # until nvm.sh has been loaded. Recheck mdpdf after loading it so that an
+    # existing installation stays on the fast path.
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    if ! command -v mdpdf &> /dev/null; then
+        if ! command -v npm &> /dev/null; then
+            if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+                curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+                if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+                    echo "Error: NVM installation did not create $NVM_DIR/nvm.sh."
+                    exit 1
+                fi
+                \. "$NVM_DIR/nvm.sh"
+            fi
+
+            # Prefer the already-installed pinned Node version. Only query and
+            # install it when it is not available locally.
+            if ! nvm use --silent v22.3.0; then
+                nvm install v22.3.0
+            fi
+        fi
+
+        npm install -g mdpdf
     fi
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-    nvm list-remote
-    nvm install v22.3.0
-    nvm list
-    npm install mdpdf -g
 fi
 
 # check docker version

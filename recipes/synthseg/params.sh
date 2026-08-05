@@ -3,3 +3,8 @@
 export toolName=synthseg
 export version=8.2.0
 export baseDockerImage=vnmd/${toolName}_${version}
+# this image is build based on 
+# https://github.com/neurodesk/neurocontainers/blob/main/recipes/synthseg/build.yaml
+# source .venv/bin/activate
+# cd recipes/synthseg
+# /bin/bash ../build.sh --local-cache

@@ -7,13 +7,41 @@ The OpenRecon and FIRE bundles were successfully built by @{{ env.GITHUB_ACTOR }
 curl -O https://openrecon.s3.us-east-2.amazonaws.com/{{ env.IMAGENAME }}.zip
 ```
  
-For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.
+Make sure that no protocol is open, because an open protocol can prevent installation of a new package.
 
-On scanners that can download files directly, open an administrator PowerShell, navigate to that `incoming` folder, and run:
+### Installing on XA70 / Numaris/X VA70 and later (for example, XB10 / VB10)
 
-```powershell
-curl.exe -k -O https://openrecon.s3.us-east-2.amazonaws.com/{{ env.IMAGENAME }}.zip
-```
+For syngo MR XA70 (Numaris/X VA70) and later, use the Numaris/Edge routine for installing OpenRecon applications:
+
+1. Exit Kiosk mode on the MRAWP with `[Tab]` + `[Del]` + `[Num +]`.
+2. Create `C:\Temp\OR\Packages`.
+3. Copy `{{ env.IMAGENAME }}.zip` to `C:\Temp\OR\Packages` without extracting it.
+4. Press the Windows key and open an elevated administrator CMD shell.
+5. Change to the Numaris/Edge directory:
+
+   ```bat
+   cd /d "%MREDGEHOME%"
+   ```
+
+6. Install the package:
+
+   ```bat
+   syngo.MR.Digi.Utils.Console.exe store --install-package "C:\Temp\OR\Packages\{{ env.IMAGENAME }}.zip"
+   ```
+
+7. Installation can take several minutes. Repeat the following command until the package is listed as installed:
+
+   ```bat
+   syngo.MR.Digi.Utils.Console.exe store --list
+   ```
+
+### Installing and testing on XA60 and XA61
+
+1. Copy the OpenRecon zip file, without extracting it, to `C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming`.
+2. Wait for the zip file to disappear from the `incoming` folder.
+3. Monitor installation in `C:\ProgramData\Siemens\Numaris\log\syngo.MR.HostInfra.OpenRecon.Watcher`. It should first create a 0 KB text file named for the container and version; that file should then grow to approximately 100-200 KB.
+4. Once the log file has been written, open a protocol and confirm that the package is available.
+5. Run the sequence with OpenRecon enabled and check for errors in `C:\ProgramData\Siemens\Numaris\log\OpenRecon.utr`.
 
 For FIRE:
 

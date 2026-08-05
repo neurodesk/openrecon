@@ -101,7 +101,9 @@ jobs:
             echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
             echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
             echo ""
-            printf '%s\n' '# OpenRecon zip: copy to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
+            printf '%s\n' '# OpenRecon: close any open protocol before installation'
+            printf '%s\n' '# XA70 / Numaris/X VA70 and later: install with the Numaris/Edge package-store command described in the generated issue'
+            printf '%s\n' '# XA60 and XA61: copy the zip to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
             printf '%s\n' '# FIRE zip: unpack and copy/merge the Ice folder into MriCustomer as described in INSTALL_FIRE.txt'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Generate issue for new container to test and release
@@ -116,13 +118,41 @@ jobs:
             printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
             printf '%s\n' '```'
             printf '\n'
-            printf '%s\n' 'For OpenRecon, copy the zip file to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming.'
+            printf '%s\n' 'Make sure that no protocol is open, because an open protocol can prevent installation of a new package.'
             printf '\n'
-            printf '%s\n' 'On scanners that can download files directly, open an administrator PowerShell, navigate to that `incoming` folder, and run:'
+            printf '%s\n' '### Installing on XA70 / Numaris/X VA70 and later (for example, XB10 / VB10)'
             printf '\n'
-            printf '%s\n' '```powershell'
-            printf '%s\n' "curl.exe -k -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
-            printf '%s\n' '```'
+            printf '%s\n' 'For syngo MR XA70 (Numaris/X VA70) and later, use the Numaris/Edge routine for installing OpenRecon applications:'
+            printf '\n'
+            printf '%s\n' '1. Exit Kiosk mode on the MRAWP with `[Tab]` + `[Del]` + `[Num +]`.'
+            printf '%s\n' '2. Create `C:\Temp\OR\Packages`.'
+            printf '3. Copy `%s.zip` to `C:\Temp\OR\Packages` without extracting it.\n' "$IMAGENAME"
+            printf '%s\n' '4. Press the Windows key and open an elevated administrator CMD shell.'
+            printf '%s\n' '5. Change to the Numaris/Edge directory:'
+            printf '\n'
+            printf '%s\n' '   ```bat'
+            printf '%s\n' '   cd /d "%MREDGEHOME%"'
+            printf '%s\n' '   ```'
+            printf '\n'
+            printf '%s\n' '6. Install the package:'
+            printf '\n'
+            printf '%s\n' '   ```bat'
+            printf '%s\n' "   syngo.MR.Digi.Utils.Console.exe store --install-package \"C:\\Temp\\OR\\Packages\\${IMAGENAME}.zip\""
+            printf '%s\n' '   ```'
+            printf '\n'
+            printf '%s\n' '7. Installation can take several minutes. Repeat the following command until the package is listed as installed:'
+            printf '\n'
+            printf '%s\n' '   ```bat'
+            printf '%s\n' '   syngo.MR.Digi.Utils.Console.exe store --list'
+            printf '%s\n' '   ```'
+            printf '\n'
+            printf '%s\n' '### Installing and testing on XA60 and XA61'
+            printf '\n'
+            printf '%s\n' '1. Copy the OpenRecon zip file, without extracting it, to `C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming`.'
+            printf '%s\n' '2. Wait for the zip file to disappear from the `incoming` folder.'
+            printf '%s\n' '3. Monitor installation in `C:\ProgramData\Siemens\Numaris\log\syngo.MR.HostInfra.OpenRecon.Watcher`. It should first create a 0 KB text file named for the container and version; that file should then grow to approximately 100-200 KB.'
+            printf '%s\n' '4. Once the log file has been written, open a protocol and confirm that the package is available.'
+            printf '%s\n' '5. Run the sequence with OpenRecon enabled and check for errors in `C:\ProgramData\Siemens\Numaris\log\OpenRecon.utr`.'
             printf '\n'
             printf '%s\n' 'For FIRE:'
             printf '\n'
