@@ -103,7 +103,7 @@ class BuildScriptEnvironmentTests(unittest.TestCase):
             node_marker = temporary_path / "node-command-was-invoked"
 
             fake_mdpdf = nvm_bin / "mdpdf"
-            fake_mdpdf.write_text("#!/bin/sh\nexit 0\n")
+            fake_mdpdf.write_text("#!/bin/sh\ntouch README.pdf\nexit 0\n")
             fake_mdpdf.chmod(0o755)
 
             nvm_script = temporary_path / ".nvm" / "nvm.sh"
@@ -155,6 +155,76 @@ class BuildScriptEnvironmentTests(unittest.TestCase):
                     "npm install -g mdpdf",
                 ],
             )
+
+    def test_pdf_generation_retries_transient_failures(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            recipe_directory = temporary_path / "recipe"
+            recipe_directory.mkdir()
+            (recipe_directory / "README.md").write_text("# Test recipe\n")
+            (recipe_directory / "OpenReconLabel.json").write_text("{}\n")
+            (recipe_directory / "params.sh").write_text(
+                "export toolName=test\n"
+                "export version=1.0.0\n"
+                "export baseDockerImage=example/test_1.0.0\n"
+            )
+
+            fake_bin = temporary_path / "bin"
+            fake_bin.mkdir()
+            attempt_log = temporary_path / "mdpdf-attempts.log"
+            argument_log = temporary_path / "mdpdf-arguments.log"
+
+            fake_python = fake_bin / "python3"
+            fake_python.write_text("#!/bin/sh\nexit 0\n")
+            fake_python.chmod(0o755)
+
+            fake_7z = fake_bin / "7z"
+            fake_7z.write_text("#!/bin/sh\nexit 0\n")
+            fake_7z.chmod(0o755)
+
+            fake_docker = fake_bin / "docker"
+            fake_docker.write_text("#!/bin/sh\nexit 1\n")
+            fake_docker.chmod(0o755)
+
+            fake_mdpdf = fake_bin / "mdpdf"
+            fake_mdpdf.write_text(
+                "#!/bin/sh\n"
+                f"printf 'attempt\\n' >> {shlex.quote(str(attempt_log))}\n"
+                f"printf '%s\\n' \"$*\" >> {shlex.quote(str(argument_log))}\n"
+                f"attempts=$(wc -l < {shlex.quote(str(attempt_log))})\n"
+                "if [ \"$attempts\" -lt 3 ]; then\n"
+                "    exit 1\n"
+                "fi\n"
+                "printf 'pdf' > README.pdf\n"
+            )
+            fake_mdpdf.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"
+            environment["VIRTUAL_ENV"] = str(temporary_path / ".venv")
+            environment["CI"] = "1"
+            environment["MDPDF_RETRY_DELAY_SECONDS"] = "0"
+
+            result = subprocess.run(
+                ["/bin/bash", str(BUILD_SCRIPT)],
+                cwd=recipe_directory,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(attempt_log.read_text().splitlines(), ["attempt"] * 3)
+            self.assertEqual(
+                argument_log.read_text().splitlines(),
+                ["README.md --timeout=60000"] * 3,
+            )
+            self.assertIn("attempt 1/3", result.stdout)
+            self.assertIn("attempt 3/3", result.stdout)
+            self.assertIn("README.pdf generated successfully", result.stdout)
+            self.assertIn("Docker daemon is not reachable", result.stdout)
 
     def test_build_workflow_activates_a_virtual_environment(self):
         workflow = BUILD_WORKFLOW.read_text()

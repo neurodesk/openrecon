@@ -174,6 +174,47 @@ if ! command -v 7z &> /dev/null; then
     fi
 fi
 
+MDPDF_MAX_ATTEMPTS=${MDPDF_MAX_ATTEMPTS:-3}
+MDPDF_RETRY_DELAY_SECONDS=${MDPDF_RETRY_DELAY_SECONDS:-5}
+MDPDF_RENDER_TIMEOUT_MS=${MDPDF_RENDER_TIMEOUT_MS:-60000}
+
+if ! [[ "$MDPDF_MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: MDPDF_MAX_ATTEMPTS must be a positive integer."
+    exit 1
+fi
+
+if ! [[ "$MDPDF_RETRY_DELAY_SECONDS" =~ ^[0-9]+$ ]]; then
+    echo "Error: MDPDF_RETRY_DELAY_SECONDS must be a non-negative integer."
+    exit 1
+fi
+
+if ! [[ "$MDPDF_RENDER_TIMEOUT_MS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: MDPDF_RENDER_TIMEOUT_MS must be a positive integer."
+    exit 1
+fi
+
+generate_readme_pdf() {
+    local attempt
+
+    for ((attempt = 1; attempt <= MDPDF_MAX_ATTEMPTS; attempt++)); do
+        rm -f README.pdf
+        echo "📄 Generating PDF from README.md (attempt ${attempt}/${MDPDF_MAX_ATTEMPTS})..."
+
+        if mdpdf README.md --timeout="$MDPDF_RENDER_TIMEOUT_MS" && [ -s README.pdf ]; then
+            echo "✓ README.pdf generated successfully"
+            return 0
+        fi
+
+        if ((attempt < MDPDF_MAX_ATTEMPTS)); then
+            echo "⚠️  PDF generation failed; retrying in ${MDPDF_RETRY_DELAY_SECONDS}s..."
+            sleep "$MDPDF_RETRY_DELAY_SECONDS"
+        fi
+    done
+
+    echo "Error: PDF generation failed after ${MDPDF_MAX_ATTEMPTS} attempts."
+    return 1
+}
+
 if [[ "$IGNORE_MDPDF" != "true" && -f "README.md" && ! -f "README.pdf" ]] && \
     ! command -v mdpdf &> /dev/null; then
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -274,8 +315,7 @@ else
         if [ -f "README.pdf" ]; then
             echo "⏭️  README.pdf already exists, skipping PDF generation."
         else
-            echo "📄 Generating PDF from README.md..."
-            mdpdf README.md
+            generate_readme_pdf
         fi
         echo "✓ Documentation step complete"
     fi
