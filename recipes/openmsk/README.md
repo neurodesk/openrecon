@@ -1,50 +1,108 @@
 # OpenMSK OpenRecon
 
 `openmsk` packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
-image-to-image module. It expects reconstructed qDESS two-echo Enhanced MR
+image-to-image module. It expects reconstructed DESS two-echo Enhanced MR
 images arriving as MRD image messages from the scanner.
 
 ## Outputs
 
-- Bone and cartilage segmentation as source-geometry derived MRD images.
+- Bone, cartilage, and meniscus segmentation as source-geometry derived MRD
+  images using the upstream DOSMA/OpenMSK label values.
 - Subregion segmentation as a separate derived MRD segmentation series when
   KneePipeline writes `*_subregions-labels.nii.gz`.
 - Optional cartilage mesh and thickness outputs in the KneePipeline working
   directory when `computethickness` is enabled.
 - Metrics comments on derived metric-bearing outputs and a burned-in metrics
   report image series when KneePipeline writes metrics JSON/CSV files.
-- qDESS T2 map MRD images and per-region T2 metrics when KneePipeline's
+- DESS T2 map MRD images and per-region T2 metrics when KneePipeline's
   `steps.t2_mapping` writes `*_t2map.nii.gz` and `*_t2_results.json`.
 
-## qDESS And T2 Caveat
+## Segmentation Labels
 
-OpenRecon receives MRD images, not the original DICOM. To preserve the qDESS
+Returned segmentation and subregion series use the same public labels as the
+upstream GitHub monolith:
+
+| Label | Tissue |
+| ---: | --- |
+| 0 | Background |
+| 1 | Patellar cartilage |
+| 2 | Femoral cartilage |
+| 3 | Medial tibial cartilage |
+| 4 | Lateral tibial cartilage |
+| 5 | Medial meniscus |
+| 6 | Lateral meniscus |
+| 7 | Femur |
+| 8 | Tibia |
+| 9 | Patella |
+
+Femoral-cartilage subregion output retains the upstream labels 11 anterior,
+12 medial weight-bearing, 13 lateral weight-bearing, 14 medial posterior, and
+15 lateral posterior.
+
+KneePipeline's modular mesh, thickness, T2, and NSM steps use a canonical
+label scheme internally. OpenRecon converts to that scheme only after sending
+the public segmentation and converts subregion output back before returning it.
+
+## Output Geometry
+
+Derived series are returned as per-slice MRD images resampled onto the source
+image grid, and the scanner's DICOM writer defines the stored dimensions,
+spacing, origin, and direction. An offline KneePipeline run on exported DICOMs
+works on the DICOM-derived grid instead, so the two outputs are not
+voxel-for-voxel identical: comparing them (for example computing DSC or ASSD
+against an offline run) requires resampling one result onto the other's grid
+first. This is inherent to OpenRecon, not a defect in either output.
+
+## DESS And T2 Caveat
+
+OpenRecon receives MRD images, not the original DICOM. To preserve the DESS
 T2 path, the wrapper keeps both echo groups and writes a minimal two-echo MR
-DICOM series with `EchoNumbers`, TR/TE/flip angle, and DOSMA's qDESS private
-GL/TG tags. TR/TE/flip are read from the MRD header or image metadata when
-available. GL/TG and any missing timing values can be supplied through the
-OpenRecon qDESS fallback fields.
+DICOM series with `EchoNumbers`, TR/TE/flip angle, and DOSMA's DESS private
+GL/TG tags. For a three-volume `sequenceName`, `sequenceName_fid`, and
+`sequenceName_SE` input, the unsuffixed volume is excluded, segmentation uses
+the voxelwise root-sum-of-squares of `_fid` and `_SE`, and fitting uses the two
+echoes separately. Because the scanner labels both echoes with TE1, the wrapper
+writes the second echo with
+`TE2 = 2 * TR - TE1`. TR/TE1/flip are read from the MRD header or image
+metadata when available. GL/TG can come from MRD user parameters or image
+metadata; otherwise legacy saved-protocol values and then built-in DESS
+defaults are used.
 
-The fallback values are only as good as the protocol values entered on the
-scanner. Runtime logs report where every qDESS value came from.
+Some scanner exports instead interleave the two echoes in one named series as
+equal-sized MRD `set=0` and `set=1` groups. OpenMSK keeps those sets together,
+segments their root-sum-of-squares, and uses both sets separately for fitting.
+LogViewer reports the detected series/set counts, grouping method, segmentation
+and fitting routing, received TE labels, and the corrected TE values.
+
+Runtime logs report the resolved value and source for every DESS fitting
+parameter.
+
+The `pymskt` right-knee reference used for cartilage subregion registration is
+packaged into the container at build time. Subregion and T2-statistics
+post-processing therefore does not require GitHub access at scanner runtime.
+If subregion generation nevertheless fails and thickness was not requested,
+OpenMSK computes global T2 statistics from the remapped femoral, medial tibial,
+lateral tibial, and patellar cartilage labels and does not report that recovery
+as a failed post-processing run.
 
 ## Parameters
 
-- `sendoriginal`: return original images before derived outputs.
+- `sendoriginal`: return original images before derived outputs. Distinct source
+  volumes are returned as separately labeled scanner series rather than being
+  combined into one series.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
   `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee` are
   also packaged). The packaged `nnunet_knee` path runs nnU-Net with
   scanner-safe single preprocessing/export worker defaults.
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
-- `runnsm`, `runbscore`: accepted for legacy scanner protocol compatibility
-  only; ignored because the gated ShapeMedKnee assets are not packaged.
-- `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
-  `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
-  TG values used to synthesize the qDESS DICOM input when MRD metadata is
-  incomplete. DOSMA's qDESS fit uses one sequence TE for the S1/S2 signal
-  ratio, so a single TE from the MRD sequence header is shared by both
-  synthesized volumes instead of inventing TE2 from the GUI.
+
+TR, TE1, and flip angle are read from MRD sequence parameters when available;
+TE2 is computed as `2 * TR - TE1`. The current scanner MRD header does not
+expose GL area or TG, so this protocol uses the built-in defaults. Acquisition
+fallback fields and the ignored legacy `runnsm`/`runbscore` flags remain
+accepted in saved protocol configurations, but are intentionally hidden from
+the GUI.
 
 ## Build And Validate
 
