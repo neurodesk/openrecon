@@ -2,6 +2,7 @@ import base64
 import json
 import jsonschema
 import os
+import platform
 import shlex
 import shutil
 import subprocess
@@ -270,9 +271,18 @@ def get_openrecon_parameter_defaults(json_data):
     return defaults
 
 
-def create_config_module_validation_script(docker_image_name, config_module_names):
+def should_run_direct_config_validation():
+    return platform.machine().lower() in ('amd64', 'x86_64')
+
+
+def create_config_module_validation_script(
+    docker_image_name,
+    config_module_names,
+    run_direct_validation=True,
+):
     config_modules_json = shlex.quote(json.dumps(config_module_names))
     docker_image_name_quoted = shlex.quote(docker_image_name)
+    run_direct_validation_flag = '1' if run_direct_validation else '0'
     validation_python = textwrap.dedent(
         '''\
         import importlib
@@ -317,17 +327,30 @@ def create_config_module_validation_script(docker_image_name, config_module_name
         f'''\
         echo "🔍 Validating OpenRecon config modules inside image..."
         config_modules_json={config_modules_json}
+        run_direct_config_validation={run_direct_validation_flag}
         direct_validation_log=/tmp/openrecon_config_direct_validation.log
         rm -f "${{direct_validation_log}}"
-        if docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c '{create_openrecon_python_resolver_script()}cd /opt/code/python-ismrmrd-server && "$OPENRECON_PYTHON" - "$@"' sh "$config_modules_json" >"${{direct_validation_log}}" 2>&1 <<'PY'
+        use_copied_rootfs_validation=0
+        if [ "$run_direct_config_validation" -eq 0 ]; then
+            echo "ℹ️  Compatibility mode: using copied-rootfs validation because nested AMD64 containers are unreliable on non-AMD64 build hosts."
+            use_copied_rootfs_validation=1
+        elif docker run --rm --platform linux/amd64 --entrypoint /bin/sh {docker_image_name_quoted} -c '{create_openrecon_python_resolver_script()}cd /opt/code/python-ismrmrd-server && "$OPENRECON_PYTHON" - "$@"' sh "$config_modules_json" >"${{direct_validation_log}}" 2>&1 <<'PY'
 {validation_python}PY
         then
             cat "${{direct_validation_log}}"
             rm -f "${{direct_validation_log}}"
-            echo "✓ OpenRecon config modules are valid"
+            echo "✓ OpenRecon config modules are valid (direct container path)"
         else
-            validation_status=$?
-            echo "⚠️  Direct container validation failed with exit code $validation_status; retrying from a copied root filesystem without starting a nested container."
+            direct_validation_status=$?
+            use_copied_rootfs_validation=1
+            if [ "$direct_validation_status" -eq 125 ]; then
+                echo "⚠️  Nested validation container could not start (Docker exit 125). This is a Docker runtime limitation, not an OpenRecon recipe validation failure."
+            else
+                echo "⚠️  Direct container validation returned exit code $direct_validation_status; cross-checking with copied-rootfs compatibility validation."
+            fi
+        fi
+
+        if [ "$use_copied_rootfs_validation" -eq 1 ]; then
             validation_root=/tmp/openrecon_config_validation_root
             rm -rf "${{validation_root}}"
             mkdir -p "${{validation_root}}"
@@ -362,12 +385,14 @@ def create_config_module_validation_script(docker_image_name, config_module_name
                 tmp_container=""
                 rm -rf "${{validation_root}}"
                 rm -f "${{direct_validation_log}}"
-                echo "✓ OpenRecon config modules are valid"
+                echo "✓ OpenRecon config modules are valid (copied-rootfs compatibility path)"
             else
                 fallback_status=$?
                 echo "❌ Copied-rootfs OpenRecon config validation failed with exit code $fallback_status."
-                echo "Direct container validation output:"
-                cat "${{direct_validation_log}}"
+                if [ "$run_direct_config_validation" -eq 1 ]; then
+                    echo "Direct container validation output:"
+                    cat "${{direct_validation_log}}"
+                fi
                 docker rm -f "${{tmp_container}}" >/dev/null 2>&1 || true
                 tmp_container=""
                 rm -rf "${{validation_root}}"
@@ -1069,7 +1094,11 @@ def build_artifacts_in_dind(
     )
     docker_image_name_quoted = shlex.quote(docker_image_name)
     validate_default_runtime_flag = '1' if validate_default_runtime else '0'
-    config_module_validation_script = create_config_module_validation_script(docker_image_name, config_module_names)
+    config_module_validation_script = create_config_module_validation_script(
+        docker_image_name,
+        config_module_names,
+        run_direct_validation=should_run_direct_config_validation(),
+    )
 
     artifact_label = 'Docker image'
     if create_openrecon_package and create_fire_package:

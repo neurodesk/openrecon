@@ -366,7 +366,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn("can_import_openrecon_python_requirements", script)
         self.assertIn('"import ismrmrd"', script)
         self.assertIn('"$OPENRECON_PYTHON" - "$@"', script)
-        self.assertIn('Direct container validation failed', script)
+        self.assertIn('Nested validation container could not start', script)
         self.assertIn('docker cp "${tmp_container}:/." "${validation_root}"', script)
         self.assertIn('create_chroot_device urandom 1 9', script)
         self.assertIn('mknod -m 666 "${device_path}"', script)
@@ -375,6 +375,27 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('Direct container validation output:', script)
         self.assertIn('exit "$fallback_status"', script)
         self.assertIn('musclemap', script)
+
+    def test_config_module_validation_script_skips_nested_container_on_arm64(self):
+        script = openrecon_build.create_config_module_validation_script(
+            'OpenRecon_test:V1.0.0',
+            ['musclemap'],
+            run_direct_validation=False,
+        )
+
+        self.assertIn('run_direct_config_validation=0', script)
+        self.assertIn(
+            'Compatibility mode: using copied-rootfs validation',
+            script,
+        )
+        self.assertIn('docker cp "${tmp_container}:/." "${validation_root}"', script)
+
+    def test_direct_config_validation_is_only_preferred_on_amd64_hosts(self):
+        with mock.patch.object(openrecon_build.platform, 'machine', return_value='arm64'):
+            self.assertFalse(openrecon_build.should_run_direct_config_validation())
+
+        with mock.patch.object(openrecon_build.platform, 'machine', return_value='x86_64'):
+            self.assertTrue(openrecon_build.should_run_direct_config_validation())
 
     def test_fire_rootfs_creates_required_device_nodes_before_validation(self):
         with (
