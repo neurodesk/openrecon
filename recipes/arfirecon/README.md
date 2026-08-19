@@ -1,6 +1,6 @@
 # OpenRecon Bloch-Siegert B1 Mapping
 
-`blochsiegertb1mapping` ports the MATLAB workflow in
+`arfirecon` ports the MATLAB workflow in
 `ProcessBSS7T_OpenRecon.m` to an OpenRecon image-processing module. It consumes
 reconstructed MRD image messages, separates magnitude and phase frames, and sends
 derived Bloch-Siegert map volumes back to the scanner.
