@@ -71,20 +71,49 @@ jobs:
           ( cd "$FIRE_BUNDLE_DIR" && shopt -s dotglob && 7z a -tzip -mm=Deflate "$FIRE_ZIPFILE_ABS" -- * >/dev/null )
           IMAGENAME=$(basename "$OPENRECON_ZIPFILE" .zip)
           FIRE_IMAGENAME=$(basename "$FIRE_ZIPFILE" .zip)
+          # Docker tag of the image saved inside the OpenRecon zip, mirroring build.py:
+          # OpenRecon_<vendor>_<name>_V<version> -> openrecon_<vendor>_<name>:v<version>
+          DOCKER_IMAGE_TAG=$(printf '%s' "$IMAGENAME" | sed 's/_V\([^_]*\)$/:V\1/' | tr '[:upper:]' '[:lower:]')
+          # Registry image the bundle is built from (recipes/<app>/params.sh), so the FIRE
+          # Docker instructions can offer a registry pull instead of copying the zip around.
+          BASE_DOCKER_IMAGE=$(
+            # shellcheck disable=SC1090
+            . "./recipes/$APPLICATION/params.sh" >/dev/null 2>&1
+            printf '%s' "$baseDockerImage"
+          )
+          if [ -z "$BASE_DOCKER_IMAGE" ]; then
+            echo "Could not read baseDockerImage from ./recipes/$APPLICATION/params.sh"
+            exit 1
+          fi
+          # ini file the FIRE workflow XML references; needed for the remote-Docker instructions.
+          FIRE_INI_NAME=$(basename "$(find "$FIRE_BUNDLE_DIR/Ice/fire" -maxdepth 1 -type f -name 'wip_070_fire_*.ini' 2>/dev/null | head -1)")
+          if [ -z "$FIRE_INI_NAME" ]; then
+            echo "Could not locate the generated FIRE ini file in $FIRE_BUNDLE_DIR/Ice/fire"
+            exit 1
+          fi
           echo "OPENRECON_ZIPFILE: $OPENRECON_ZIPFILE"
           echo "FIRE_ZIPFILE: $FIRE_ZIPFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "FIRE_IMAGENAME: $FIRE_IMAGENAME"
+          echo "DOCKER_IMAGE_TAG: $DOCKER_IMAGE_TAG"
+          echo "FIRE_INI_NAME: $FIRE_INI_NAME"
+          echo "BASE_DOCKER_IMAGE: $BASE_DOCKER_IMAGE"
           {
             echo "OPENRECON_ZIPFILE=$OPENRECON_ZIPFILE"
             echo "FIRE_ZIPFILE=$FIRE_ZIPFILE"
             echo "ZIPFILE=$OPENRECON_ZIPFILE"
             echo "IMAGENAME=$IMAGENAME"
             echo "FIRE_IMAGENAME=$FIRE_IMAGENAME"
+            echo "DOCKER_IMAGE_TAG=$DOCKER_IMAGE_TAG"
+            echo "FIRE_INI_NAME=$FIRE_INI_NAME"
+            echo "BASE_DOCKER_IMAGE=$BASE_DOCKER_IMAGE"
           } >> "$GITHUB_ENV"
           {
             echo "IMAGENAME=$IMAGENAME"
             echo "FIRE_IMAGENAME=$FIRE_IMAGENAME"
+            echo "DOCKER_IMAGE_TAG=$DOCKER_IMAGE_TAG"
+            echo "FIRE_INI_NAME=$FIRE_INI_NAME"
+            echo "BASE_DOCKER_IMAGE=$BASE_DOCKER_IMAGE"
           } >> "$GITHUB_OUTPUT"
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@99214aa6889fcddfa57764031d71add364327e59 # v6.1.3
@@ -102,9 +131,12 @@ jobs:
             echo "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
             echo ""
             printf '%s\n' '# OpenRecon: close any open protocol before installation'
-            printf '%s\n' '# XA70 / Numaris/X VA70 and later: install with the Numaris/Edge package-store command described in the generated issue'
-            printf '%s\n' '# XA60 and XA61: copy the zip to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
-            printf '%s\n' '# FIRE zip: unpack and copy/merge the Ice folder into MriCustomer as described in INSTALL_FIRE.txt'
+            printf '%s\n' '# OpenRecon, XA70 / Numaris/X VA70 and later: install with the Numaris/Edge package-store command described in the generated issue'
+            printf '%s\n' '# OpenRecon, XA60 and XA61: copy the zip to C:\Program Files\Siemens\Numaris\OperationalManagement\FileTransfer\incoming'
+            printf '%s\n' '# FIRE option A (chroot on MARS): unpack the zip and copy/merge the Ice folder into MriCustomer as described in INSTALL_FIRE.txt'
+            printf '%s\n' "# FIRE option B (Docker on another machine), from the registry: docker run --rm -it -p 9002:9002 -v /tmp/share:/tmp/share ${BASE_DOCKER_IMAGE} /bin/bash -c '/usr/sbin/ldconfig; exec python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002'"
+            printf '%s\n' "# FIRE option B, from the zip: docker load -i ${IMAGENAME}.tar && docker run --rm -it -p 9002:9002 -v /tmp/share:/tmp/share ${DOCKER_IMAGE_TAG}"
+            printf '%s\n' "# FIRE option B: then set hostname/port (and the [tunnel] section) in ${FIRE_INI_NAME} and start_chroot=false"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Generate issue for new container to test and release
         env:
@@ -112,7 +144,11 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           {
-            printf '%s\n' "The OpenRecon and FIRE bundles were successfully built by @${{ github.actor }}. To test them, download:"
+            printf '%s\n' "Two separate bundles were successfully built by @${{ github.actor }} from the same container: an **OpenRecon** package for the scanner package store, and a **FIRE** package for the WIP 070 FIRE framework. They are installed and configured independently, so follow only the section for the one you are testing."
+            printf '\n'
+            printf '%s\n' '## OpenRecon'
+            printf '\n'
+            printf '%s\n' 'Download the OpenRecon bundle:'
             printf '\n'
             printf '%s\n' '```bash'
             printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
@@ -126,7 +162,7 @@ jobs:
             printf '\n'
             printf '%s\n' '1. Exit Kiosk mode on the MRAWP with `[Tab]` + `[Del]` + `[Num +]`.'
             printf '%s\n' '2. Create `C:\Temp\OR\Packages`.'
-            printf '3. Copy `%s.zip` to `C:\Temp\OR\Packages` without extracting it.\n' "$IMAGENAME"
+            printf '%s\n' "3. Copy \`${IMAGENAME}.zip\` to \`C:\\Temp\\OR\\Packages\` without extracting it."
             printf '%s\n' '4. Press the Windows key and open an elevated administrator CMD shell.'
             printf '%s\n' '5. Change to the Numaris/Edge directory:'
             printf '\n'
@@ -160,15 +196,126 @@ jobs:
             printf '%s\n' '5. Once the log file has been written, open a protocol and confirm that the package is available.'
             printf '%s\n' '6. Run the sequence with OpenRecon enabled and check for errors in `C:\ProgramData\Siemens\Numaris\log\OpenRecon.utr`.'
             printf '\n'
-            printf '%s\n' 'For FIRE:'
+            printf '%s\n' '## FIRE'
+            printf '\n'
+            printf '%s\n' 'Download the FIRE bundle:'
             printf '\n'
             printf '%s\n' '```bash'
             printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${FIRE_IMAGENAME}.zip"
             printf '%s\n' '```'
             printf '\n'
-            printf '%s\n' 'To install the FIRE package, unpack the zip and copy/merge the `Ice` folder into `MriCustomer` as described in `INSTALL_FIRE.txt`.'
+            printf '%s\n' 'FIRE can run this reconstruction in two ways. Option A is what the bundle ships configured for and needs no network setup. Option B runs the same container on separate hardware, which is the option to pick when the reconstruction needs more memory than MARS has.'
             printf '\n'
-            printf '%s\n' 'once tested upload to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make available to all institutes.'
+            printf '%s\n' '### FIRE option A: chroot image on MARS (default)'
+            printf '\n'
+            printf '%s\n' "Unpack the zip and copy/merge the \`Ice\` folder into \`MriCustomer\` as described in \`INSTALL_FIRE.txt\`. The chroot image lands in \`%CustomerIceProgs%\\fire\\chroot\\\` and \`%CustomerIceProgs%\\fire\\${FIRE_INI_NAME}\` already has \`start_chroot=true\`, so no further configuration is needed."
+            printf '\n'
+            printf '%s\n' '### FIRE option B: Docker container on another machine (same network as MARS, or through an SSH tunnel)'
+            printf '\n'
+            printf '%s\n' 'The same container can run under Docker on any machine MARS can reach: either directly on the scanner-internal network that MARS sits on (`192.168.2.x`), or on an external machine reached through the SSH tunnel that FIRE opens from the scanner host. `wip_070_fire_fire_mars_ssh.ini` in the WIP 070 package is the reference configuration for the tunnel variant.'
+            printf '\n'
+            printf '%s\n' 'Install the FIRE bundle as in option A first, so the workflow XML and ini file are present on the scanner.'
+            printf '\n'
+            printf '%s\n' '#### B1. Get the container onto the compute machine'
+            printf '\n'
+            printf '%s\n' 'Either pull the Neurodesk container this bundle is built from, which avoids copying zip files around:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "docker pull ${BASE_DOCKER_IMAGE}"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'This is the same container with the same tools and the same `python-ismrmrd-server`; the OpenRecon build only adds the OpenRecon metadata label and a pre-set start command on top of it, so the start command has to be given explicitly in step B2.'
+            printf '\n'
+            printf '%s\n' 'Or load the exact built image out of the OpenRecon zip, which contains it as a `docker save` tar:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "curl -O https://openrecon.s3.us-east-2.amazonaws.com/${IMAGENAME}.zip"
+            printf '%s\n' "unzip ${IMAGENAME}.zip"
+            printf '%s\n' "docker load -i ${IMAGENAME}.tar"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' '#### B2. Start the server'
+            printf '\n'
+            printf '%s\n' 'The server listens on `0.0.0.0:9002` inside the container, the same way the upstream `kspacekelvin/fire-python` server is run (`docker run --rm -it -p 9002:9002 kspacekelvin/fire-python`), so only the port publication has to be set.'
+            printf '\n'
+            printf '%s\n' 'With the registry image, pass the start command explicitly:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "docker run --rm -it -p 9002:9002 -v /tmp/share:/tmp/share ${BASE_DOCKER_IMAGE} \\"
+            printf '%s\n' '  /bin/bash -c '\''/usr/sbin/ldconfig; exec python3 /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l=/tmp/python-ismrmrd-server.log'\'''
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'With the image loaded from the OpenRecon zip, the start command is already baked in:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "docker run --rm -it -p 9002:9002 -v /tmp/share:/tmp/share ${DOCKER_IMAGE_TAG}"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'For a long-lived service, run it detached instead:'
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "docker run -d --restart unless-stopped --name fire-server -p 9002:9002 -v /tmp/share:/tmp/share ${DOCKER_IMAGE_TAG}"
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' '- To listen on a different port on the compute machine, remap the host side only and keep `9002` inside the container, for example `-p 9010:9002`.'
+            printf '%s\n' '- Add `--gpus all` if the reconstruction uses CUDA.'
+            printf '%s\n' '- The server writes its log to `/tmp/python-ismrmrd-server.log` inside the container; `docker logs -f fire-server` shows the same output.'
+            printf '%s\n' '- Confirm the port is reachable from the scanner before scanning, for example `nc -vz <IP of the compute machine> 9002`.'
+            printf '\n'
+            printf '%s\n' '#### B3. Point FIRE at that machine'
+            printf '\n'
+            printf '%s\n' "Edit \`%CustomerIceProgs%\\fire\\${FIRE_INI_NAME}\` on the scanner, which is the ini file the FIRE workflow XML references in \`<IniFile>\`. \`start_chroot\` has to be \`false\` so MARS does not start the local chroot as well."
+            printf '\n'
+            printf '%s\n' 'Same network as MARS, no tunnel; send the data straight to the machine running the container:'
+            printf '\n'
+            printf '%s\n' '```ini'
+            printf '%s\n' '[fire]'
+            printf '%s\n' 'hostname=<IP of the machine running the container>'
+            printf '%s\n' 'port=9002'
+            printf '\n'
+            printf '%s\n' '[chroot]'
+            printf '%s\n' 'start_chroot=false'
+            printf '\n'
+            printf '%s\n' '[tunnel]'
+            printf '%s\n' 'open_tunnel=false'
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'Through the SSH tunnel from the scanner host, the `wip_070_fire_fire_mars_ssh.ini` pattern; FIRE sends to a local port on the host and `plink.exe` forwards it to the container:'
+            printf '\n'
+            printf '%s\n' '```ini'
+            printf '%s\n' '[fire]'
+            printf '%s\n' 'hostname=192.168.2.1'
+            printf '%s\n' 'port=9003'
+            printf '\n'
+            printf '%s\n' '[chroot]'
+            printf '%s\n' 'start_chroot=false'
+            printf '\n'
+            printf '%s\n' '[tunnel]'
+            printf '%s\n' 'open_tunnel=true'
+            printf '%s\n' 'local_hostname=192.168.2.1'
+            printf '%s\n' 'local_fire_port=9003'
+            printf '%s\n' 'remote_hostname=<IP of the machine running the container>'
+            printf '%s\n' 'remote_ssh_port=22'
+            printf '%s\n' 'remote_fire_port=9002'
+            printf '%s\n' 'remote_user=<user on the compute machine>'
+            printf '%s\n' 'remote_ssh_key_file=id_rsa.ppk'
+            printf '%s\n' 'remote_ssh_fingerprint=<MD5 host fingerprint of the compute machine>'
+            printf '%s\n' 'auto_close_duration=900'
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' '- The bundled ini ships `hostname` and `port` in its leading section with the MARS defaults (`192.168.2.2:9002`); replace that leading section with the block above.'
+            printf '%s\n' '- `remote_fire_port` is the host side of the `-p` mapping used in step B2, and `port` in `[fire]` has to match `local_fire_port`.'
+            printf '%s\n' '- `local_hostname` is the IP of the scanner host system, typically `192.168.2.1`; confirm it with `ipconfig` on the host.'
+            printf '%s\n' '- `remote_ssh_key_file` is a PuTTY `.ppk` private key that has to sit in `C:\Medcom\MriCustomer\ice\fire\`. Create the key pair with `ssh-keygen -t rsa -b 4096`, convert it with `puttygen ~/.ssh/id_rsa -o ~/.ssh/id_rsa.ppk`, and install the public key on the compute machine with `ssh-copy-id -i ~/.ssh/id_rsa.pub <user>@<IP>`.'
+            printf '%s\n' '- Read the fingerprint with `ssh-keygen -E md5 -l -f <(ssh-keyscan <IP>)` on Linux or `plink.exe -v <IP>` on Windows, and enter the 32-character MD5 string without the `MD5:` prefix.'
+            printf '\n'
+            printf '%s\n' '#### B4. Test'
+            printf '\n'
+            printf '%s\n' 'Run the sequence with the FIRE workflow selected and watch the container output. Reconstructed images are returned over the same connection, so nothing else needs to be configured.'
+            printf '\n'
+            printf '%s\n' '## Release'
+            printf '\n'
+            printf '%s\n' 'Once tested, upload the bundles to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make them available to all institutes.'
             printf '\n'
             printf '%s\n' 'Please close this issue when completed :)'
           } > issue-body.md
