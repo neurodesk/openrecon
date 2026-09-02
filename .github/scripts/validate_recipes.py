@@ -10,9 +10,9 @@ import json
 import tempfile
 from pathlib import Path
 
-# Import validateJson from build.py
+# Import validators from build.py
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'recipes'))
-from build import validateJson
+from build import validateJson, validate_openrecon_label_metadata
 
 
 def validate_recipe(recipe_json_path, schema_path):
@@ -52,8 +52,14 @@ def validate_recipe(recipe_json_path, schema_path):
     
     try:
         # Use the existing validateJson function from build.py
-        result = validateJson(tmp_path, schema_path)
-        return result
+        if not validateJson(tmp_path, schema_path):
+            return False
+        try:
+            validate_openrecon_label_metadata(json_data)
+        except ValueError as error:
+            print(error)
+            return False
+        return True
     finally:
         # Clean up temp file
         os.unlink(tmp_path)
