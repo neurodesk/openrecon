@@ -2,6 +2,7 @@ import importlib.util
 import json
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -9,6 +10,7 @@ from unittest import mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_PY = REPO_ROOT / 'recipes' / 'build.py'
+VALIDATE_RECIPES_PY = REPO_ROOT / '.github' / 'scripts' / 'validate_recipes.py'
 SPEC = importlib.util.spec_from_file_location('openrecon_build', BUILD_PY)
 openrecon_build = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(openrecon_build)
@@ -107,6 +109,27 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         )
 
         self.assert_validation_error(label, 'exactly one parameter with id "config"; found 0')
+
+    def test_ci_validation_rejects_missing_config_parameter(self):
+        source_path = REPO_ROOT / 'recipes' / 'b0map' / 'OpenReconLabel.json'
+        label = json.loads(source_path.read_text())
+        label['parameters'] = [
+            parameter
+            for parameter in label['parameters']
+            if parameter.get('id') != 'config'
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            label_path = pathlib.Path(tmpdir) / 'OpenReconLabel.json'
+            label_path.write_text(json.dumps(label))
+            result = subprocess.run(
+                [sys.executable, str(VALIDATE_RECIPES_PY), str(label_path)],
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('exactly one parameter with id "config"', result.stdout)
 
     def test_rejects_duplicate_config_parameter(self):
         label = base_label([config_parameter(), config_parameter(default='other')])
