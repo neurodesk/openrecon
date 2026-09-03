@@ -18,7 +18,7 @@ SPEC.loader.exec_module(openrecon_build)
 
 def base_label(parameters):
     return {
-        'general': {'name': {'en': 'test'}, 'version': '1.0.0', 'vendor': 'neurodesk'},
+        'general': {'name': {'en': 'test'}, 'id': 'test', 'version': '1.0.0', 'vendor': 'neurodesk'},
         'reconstruction': {},
         'parameters': parameters,
     }
@@ -40,6 +40,28 @@ class OpenReconLabelValidationTests(unittest.TestCase):
     def assert_validation_error(self, label, expected_text):
         with self.assertRaisesRegex(ValueError, expected_text):
             openrecon_build.validate_openrecon_label_metadata(label)
+
+    def test_uses_machine_id_when_display_name_is_not_safe_for_docker(self):
+        label = base_label([config_parameter()])
+        label['general']['name']['en'] = 'spinalcordtoolbox GPU'
+        label['general']['id'] = 'spinalcordtoolbox_gpu'
+
+        self.assertEqual(
+            openrecon_build.get_machine_package_name(label),
+            'spinalcordtoolbox_gpu',
+        )
+        self.assertEqual(
+            openrecon_build.get_docker_image_name(label),
+            'openrecon_neurodesk_spinalcordtoolbox_gpu:v1.0.0',
+        )
+
+    def test_rejects_unsafe_display_name_without_safe_machine_id(self):
+        label = base_label([config_parameter()])
+        label['general']['name']['en'] = 'display name'
+        label['general']['id'] = 'unsafe id'
+
+        with self.assertRaisesRegex(ValueError, 'Docker- and filename-safe general.id'):
+            openrecon_build.get_machine_package_name(label)
 
     def test_accepts_choice_default_listed_in_values(self):
         label = base_label(
