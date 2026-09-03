@@ -3,6 +3,7 @@ import json
 import jsonschema
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -24,6 +25,29 @@ OPENRECON_JSON_CONFIG_VERSION = '1.1.0'
 DIND_RUN_ATTEMPTS_ENV = 'OPENRECON_DIND_RUN_ATTEMPTS'
 DIND_RETRY_DELAY_SECONDS_ENV = 'OPENRECON_DIND_RETRY_DELAY_SECONDS'
 OPENRECON_PYTHON_CANDIDATES = ('python3', 'python', 'python3.11')
+SAFE_PACKAGE_NAME_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+
+
+def get_machine_package_name(json_data):
+    general = json_data['general']
+    display_name = general['name']['en']
+    if SAFE_PACKAGE_NAME_PATTERN.fullmatch(display_name):
+        return display_name
+
+    package_id = general['id']
+    if SAFE_PACKAGE_NAME_PATTERN.fullmatch(package_id):
+        return package_id
+
+    raise ValueError(
+        'OpenReconLabel.json must provide a Docker- and filename-safe general.id '
+        f'when general.name.en is not safe: {package_id!r}'
+    )
+
+
+def get_docker_image_name(json_data):
+    general = json_data['general']
+    package_name = get_machine_package_name(json_data)
+    return f"OpenRecon_{general['vendor']}_{package_name}:V{general['version']}".lower()
 
 
 def get_positive_int_env(name, default):
@@ -1328,7 +1352,7 @@ if __name__ == '__main__':
 
     version = jsonData['general']['version']
     vendor = jsonData['general']['vendor']
-    name = jsonData['general']['name']['en']
+    name = get_machine_package_name(jsonData)
 
     openreconBundleBase = f'OpenRecon_{vendor}_{name}_V{version}'
     openreconTarName = openreconBundleBase + '.tar'
@@ -1344,7 +1368,7 @@ if __name__ == '__main__':
     startupScriptPath = '/usr/local/bin/start-fire-openrecon.sh'
     validateDefaultFireRuntime = not (os.getenv('fireStartupCommand') or '').strip()
 
-    dockerImagename = (f'OpenRecon_{vendor}_{name}:V{version}').lower()
+    dockerImagename = get_docker_image_name(jsonData)
 
     build_start = time.time()
     base_image_tar = None
