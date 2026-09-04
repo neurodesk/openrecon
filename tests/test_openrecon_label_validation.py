@@ -380,6 +380,54 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertEqual((ice_dir / 'wip_070_fire_sodiumnufft.ipr').read_text(), '<custom-ipr />\n')
             self.assertTrue((ice_dir / 'fire' / 'config' / 'wip_070_fire_sodiumnufft.json').is_file())
 
+    def test_qsmxt_fire_bundle_uses_fork_safe_workflow_and_matching_config(self):
+        recipe_dir = REPO_ROOT / 'recipes' / 'qsmxt'
+        label = json.loads((recipe_dir / 'OpenReconLabel.json').read_text())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = pathlib.Path(tmpdir)
+            stage_dir = tmpdir / 'stage'
+            stage_dir.mkdir()
+            fire_img = tmpdir / 'FIRE_neurodesk_qsmxt_V9.15.0.img'
+            docs = tmpdir / 'OpenRecon_neurodesk_qsmxt_V9.15.0.pdf'
+            fire_img.write_text('img')
+            docs.write_text('pdf')
+
+            openrecon_build.build_fire_bundle_stage(
+                stage_dir=stage_dir,
+                fire_img_path=fire_img,
+                fire_ini_name=openrecon_build.get_fire_ini_filename('qsmxt'),
+                fire_ini_text='[OpenRecon]\nport=9002\n',
+                install_text='install\n',
+                docs_source_path=docs,
+                json_data=label,
+                package_name='qsmxt',
+                recipe_dir=recipe_dir,
+            )
+
+            ice_dir = stage_dir / 'Ice'
+            workflow_xml = (ice_dir / 'wip_070_fire_qsmxt.xml').read_text()
+            config = json.loads(
+                (ice_dir / 'fire' / 'config' / 'wip_070_fire_qsmxt.json').read_text()
+            )
+
+            self.assertTrue((ice_dir / 'wip_070_fire_qsmxt.ipr').is_file())
+            self.assertTrue((ice_dir / 'fire' / 'wip_070_fire_qsmxt.ini').is_file())
+            self.assertIn('<Config>qsmxt</Config>', workflow_xml)
+            self.assertIn(
+                '<JsonConfig>%CustomerIceProgs%\\fire\\config\\wip_070_fire_qsmxt.json</JsonConfig>',
+                workflow_xml,
+            )
+            self.assertNotIn('invertcontrast', workflow_xml)
+            self.assertIn('<ImageEmitter>\n    <Anchor>imafinish</Anchor>', workflow_xml)
+            self.assertIn('<Injector>\n    <Anchor>MiniHeadFillDecorator</Anchor>', workflow_xml)
+            self.assertIn('<AutoConfigure></AutoConfigure>', workflow_xml)
+            self.assertNotIn('<AutoConfigure>image2image</AutoConfigure>', workflow_xml)
+            self.assertEqual(config['parameters']['config'], 'qsmxt')
+            self.assertIn('pipelinepreset', config['parameters'])
+            self.assertIn('qsmalgorithm', config['parameters'])
+            self.assertNotEqual(set(config['parameters']), {'options', 'sendOriginal'})
+
     def test_removes_platform_metadata_files_from_fire_bundle_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             bundle_dir = pathlib.Path(tmpdir) / 'bundle'

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<OpenReconConfiguration xmlns="OpenRecon" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="OpenRecon ./OpenRecon.xsd">
+
+  <Marshal>
+    <Anchor>Flags</Anchor>
+    <IniFile>%CustomerIceProgs%\fire\wip_070_fire_qsmxt.ini</IniFile>
+    <Config>qsmxt</Config>
+    <LocalConfig></LocalConfig>
+    <JsonConfig>%CustomerIceProgs%\fire\config\wip_070_fire_qsmxt.json</JsonConfig>
+    <ParameterMap>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xml</ParameterMap>
+    <XslStylesheet>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xsl</XslStylesheet>
+    <SendWaveformData>false</SendWaveformData>
+    <MinimumMemoryLimit>2048.0</MinimumMemoryLimit>
+    <PurgeIrisMemory>false</PurgeIrisMemory>
+    <WaitingIntervalForStartOnMarsInSeconds>1.0</WaitingIntervalForStartOnMarsInSeconds>
+    <WaitingIntervalForCheckToStopOnMarsInSeconds>3.0</WaitingIntervalForCheckToStopOnMarsInSeconds>
+    <ConnectionTimeOut>3.0</ConnectionTimeOut>
+    <ConnectionRetryLimit>10</ConnectionRetryLimit>
+    <SavedProtocolSectionList></SavedProtocolSectionList>
+    <QueryDependencyStatus>false</QueryDependencyStatus>
+    <SendDependentData>false</SendDependentData>
+    <AdjParameterMap>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xml</AdjParameterMap>
+    <AdjXslStylesheet>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xsl</AdjXslStylesheet>
+    <AdjConfig>default_measurement_dependencies.xml</AdjConfig>
+    <AdjLocalConfig></AdjLocalConfig>
+    <InitiateConnection>auto</InitiateConnection>
+  </Marshal>
+
+  <RawEmitter>
+    <Anchor>none</Anchor>
+    <PassOnData>false</PassOnData>
+    <CheckLimitsPassOnData>true</CheckLimitsPassOnData>
+    <RefAsFlashReadOut>false</RefAsFlashReadOut>
+    <CompressionPrecision>0</CompressionPrecision>
+    <CompressionTolerance>0.0</CompressionTolerance>
+    <ParseTrajectory>false</ParseTrajectory>
+    <ParseMdhRadialAngles>false</ParseMdhRadialAngles>
+    <StoreRadialAngles>false</StoreRadialAngles>
+  </RawEmitter>
+
+  <ImageEmitter>
+    <Anchor>imafinish</Anchor>
+    <PassOnData>false</PassOnData>
+    <EmitNormOriented>true</EmitNormOriented>
+  </ImageEmitter>
+
+  <Injector>
+    <Anchor>MiniHeadFillDecorator</Anchor>
+    <SplitChannels>false</SplitChannels>
+    <UseIceFillingMiniHeader>true</UseIceFillingMiniHeader>
+    <DistorCorMode></DistorCorMode>
+  </Injector>
+
+  <Configurator>
+    <DisableSystemNoiseAdjust>false</DisableSystemNoiseAdjust>
+    <OnlyEmitData>false</OnlyEmitData>
+    <AutoConfigure></AutoConfigure>
+    <FunctorRemoveList></FunctorRemoveList>
+    <RemoveIntermediateFunctors>false</RemoveIntermediateFunctors>
+    <DisableNormOrientation>false</DisableNormOrientation>
+    <Use16Bit>true</Use16Bit>
+    <CorrectPipeServiceOrder>true</CorrectPipeServiceOrder>
+  </Configurator>
+
+</OpenReconConfiguration>
