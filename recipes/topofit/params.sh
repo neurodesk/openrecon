@@ -3,4 +3,4 @@
 export toolName=topofit
 export version=0.5.1
 
-export baseDockerImage=ghcr.io/neurodesk/topofit:${version}_20260904
+export baseDockerImage=ghcr.io/neurodesk/topofit:${version}_20260905
