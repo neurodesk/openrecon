@@ -3,7 +3,7 @@
 This OpenRecon workflow runs BrainNet TopoFit on a reconstructed 3D anatomical
 MR image during the scanner session. It generates bilateral white, pial, and
 spherical registration surfaces in FreeSurfer geometry format. It then returns
-a scanner-visible axial QC series on the exact source image grid.
+scanner-visible QC series on the exact source image grid.
 
 This is a research workflow, not a complete FreeSurfer reconstruction. It does
 not run `recon-all`, cortical parcellation, or longitudinal processing.
