@@ -53,35 +53,35 @@
       "id": "sendb1",
       "label": { "en": "Send B1 map" },
       "type": "boolean",
-      "information": { "en": "Send measured Bloch-Siegert B1 map output in uT" },
+      "information": { "en": "Send measured B1 using the full 12-bit uint16 display range with DICOM rescaling back to uT" },
       "default": true
     },
     {
       "id": "sendbsp",
       "label": { "en": "Send BS phase" },
       "type": "boolean",
-      "information": { "en": "Send Bloch-Siegert phase difference map output in radians" },
+      "information": { "en": "Send Bloch-Siegert phase using the full 12-bit display range with DICOM rescaling back to degrees" },
       "default": true
     },
     {
       "id": "sendphsc",
       "label": { "en": "Send Tx phase" },
       "type": "boolean",
-      "information": { "en": "Send the echo-A transmit phase for each Tx channel in radians" },
+      "information": { "en": "Send dedicated transmit phase using the full 12-bit display range with DICOM rescaling back to degrees" },
       "default": true
     },
     {
       "id": "sendb0",
       "label": { "en": "Send B0 map" },
       "type": "boolean",
-      "information": { "en": "Send B0 phase-difference map output in Hz" },
+      "information": { "en": "Send B0 using the full 12-bit display range with DICOM rescaling back to Hz" },
       "default": true
     },
     {
       "id": "sendmask",
       "label": { "en": "Send mask" },
       "type": "boolean",
-      "information": { "en": "Send the magnitude-threshold mask used by the MATLAB workflow for visual QC" },
+      "information": { "en": "Send the optional magnitude-threshold mask using the full 12-bit display range; it is not applied to calculated maps" },
       "default": false
     },
     {
