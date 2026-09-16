@@ -44,16 +44,47 @@ class OpenReconLabelValidationTests(unittest.TestCase):
     def test_uses_machine_id_when_display_name_is_not_safe_for_docker(self):
         label = base_label([config_parameter()])
         label['general']['name']['en'] = 'spinalcordtoolbox GPU'
-        label['general']['id'] = 'spinalcordtoolbox_gpu'
+        label['general']['id'] = 'spinalcordtoolboxgpu'
 
         self.assertEqual(
             openrecon_build.get_machine_package_name(label),
-            'spinalcordtoolbox_gpu',
+            'spinalcordtoolboxgpu',
         )
         self.assertEqual(
             openrecon_build.get_docker_image_name(label),
-            'openrecon_neurodesk_spinalcordtoolbox_gpu:v1.0.0',
+            'openrecon_neurodesk_spinalcordtoolboxgpu:v1.0.0',
         )
+
+    def test_spinalcordtoolbox_variants_have_import_safe_names(self):
+        for variant in ('gpu', 'lite'):
+            with self.subTest(variant=variant):
+                path = REPO_ROOT / 'recipes' / f'spinalcordtoolbox_{variant}' / 'OpenReconLabel.json'
+                label = json.loads(path.read_text())
+                label['general']['version'] = '7.3.4'
+                expected_name = f'spinalcordtoolbox{variant}'
+                self.assertEqual(openrecon_build.get_machine_package_name(label), expected_name)
+                self.assertEqual(label['general']['id'], expected_name)
+                self.assertEqual(
+                    openrecon_build.get_docker_image_name(label),
+                    f'openrecon_neurodesk_{expected_name}:v7.3.4',
+                )
+
+    def test_underscore_display_name_falls_back_to_import_safe_id(self):
+        label = base_label([config_parameter()])
+        label['general']['name']['en'] = 'spinalcordtoolbox_lite'
+        label['general']['id'] = 'spinalcordtoolboxlite'
+        self.assertEqual(openrecon_build.get_machine_package_name(label), 'spinalcordtoolboxlite')
+
+    def test_metadata_rejects_underscores_in_package_name(self):
+        label = base_label([config_parameter()])
+        label['general']['name']['en'] = 'spinalcordtoolbox_gpu'
+        label['general']['id'] = 'spinalcordtoolbox_gpu'
+        self.assert_validation_error(label, 'underscores')
+
+    def test_metadata_rejects_underscores_in_vendor(self):
+        label = base_label([config_parameter()])
+        label['general']['vendor'] = 'neuro_desk'
+        self.assert_validation_error(label, 'vendor.*underscores')
 
     def test_rejects_unsafe_display_name_without_safe_machine_id(self):
         label = base_label([config_parameter()])

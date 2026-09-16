@@ -25,7 +25,7 @@ OPENRECON_JSON_CONFIG_VERSION = '1.1.0'
 DIND_RUN_ATTEMPTS_ENV = 'OPENRECON_DIND_RUN_ATTEMPTS'
 DIND_RETRY_DELAY_SECONDS_ENV = 'OPENRECON_DIND_RETRY_DELAY_SECONDS'
 OPENRECON_PYTHON_CANDIDATES = ('python3', 'python', 'python3.11')
-SAFE_PACKAGE_NAME_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+SAFE_PACKAGE_NAME_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9.-]*$')
 
 
 def get_machine_package_name(json_data):
@@ -40,7 +40,8 @@ def get_machine_package_name(json_data):
 
     raise ValueError(
         'OpenReconLabel.json must provide a Docker- and filename-safe general.id '
-        f'when general.name.en is not safe: {package_id!r}'
+        f'when general.name.en is not safe: {package_id!r}. '
+        'Package names must not contain underscores, which separate OpenRecon filename fields.'
     )
 
 
@@ -215,6 +216,16 @@ def get_parameter_label(parameter):
 
 def validate_openrecon_label_metadata(json_data):
     errors = []
+    try:
+        get_machine_package_name(json_data)
+    except ValueError as error:
+        errors.append(str(error))
+    vendor = json_data['general']['vendor']
+    if not SAFE_PACKAGE_NAME_PATTERN.fullmatch(vendor):
+        errors.append(
+            f'OpenReconLabel.json general.vendor must be a Docker- and filename-safe name '
+            f'without underscores: {vendor!r}.'
+        )
     parameters = json_data.get('parameters', [])
     parameter_ids = []
 

@@ -1,10 +1,10 @@
 {
   "general": {
-    "name": { "en": "spinalcordtoolbox GPU" },
+    "name": { "en": "spinalcordtoolboxgpu" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": { "en": "spinalcordtoolbox GPU" },
-    "id": "spinalcordtoolbox_gpu",
+    "id": "spinalcordtoolboxgpu",
     "regulatory_information": {
       "device_trade_name":"spinalcordtoolbox",
       "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
