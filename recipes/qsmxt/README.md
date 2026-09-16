@@ -44,12 +44,14 @@ Use **Output maps** to select what returns to the scanner database:
 | Magnitude | Combined magnitude image. |
 | Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
 | SWI | Susceptibility-weighted image. |
-| T2 star | T2* relaxation map. Use a multi-echo acquisition. |
+| T2 star | T2* relaxation map. Use at least three equally spaced echoes. |
 | R2 star | R2* relaxation-rate map. Use a multi-echo acquisition. |
 
 **Send original** controls whether the source magnitude and phase images are also returned. Turn it off to keep only the selected output maps.
 
 For quantitative analysis, use a viewer that applies DICOM rescaling. QSM DICOM values are in parts per billion (ppb); divide by 1000 to convert to parts per million (ppm).
+
+T2* DICOM values are in milliseconds. The default window covers zero to the 95th percentile of positive fits and stays constant across slices. Scanner storage retains steps of 1 ms or finer, with values above 4095 ms saturating. Use the full-precision NIfTI output to inspect extreme fits.
 
 ## Change the reconstruction method
 
@@ -72,6 +74,9 @@ Start with **BET (recommended)**. If the mask excludes brain tissue, lower **BET
 For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** applies only when you choose Percentile.
 
 **Mask cleanup** can fill holes and close small gaps. Its default is **Close and fill holes**. Mask settings apply independently of the pipeline preset.
+
+## Citation
+Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
 
 ## Help and further reading
 
