@@ -1,14 +1,14 @@
 {
   "general": {
     "name": {
-      "en": "spinalcordtoolbox_lite"
+      "en": "spinalcordtoolboxlite"
     },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": {
       "en": "spinalcordtoolbox_lite"
     },
-    "id": "spinalcordtoolbox_lite",
+    "id": "spinalcordtoolboxlite",
     "regulatory_information": {
       "device_trade_name": "spinalcordtoolbox",
       "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
