@@ -77,7 +77,12 @@ A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose 
 - **Background** removes background-field contributions. The default is iSMV.
 - **QSM algorithm** calculates susceptibility. The default is HD-QSM.
 
-With **Custom algorithm controls**, **Default (HD-QSM)** uses HD-QSM, **Default (ROMEO)** uses ROMEO, and **Default (iSMV)** uses iSMV. Any other **Pipeline preset** overrides all three choices, even if you change their displayed values. Reconstruction time and results depend on the method, acquisition, and available hardware. See the [QSMxT algorithm reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
+With **Custom algorithm controls**, **Default (HD-QSM)** uses HD-QSM, **Default (ROMEO)** uses
+ROMEO, and **Default (iSMV)** uses iSMV. Any other **Pipeline preset** overrides all three
+choices, even if you change their displayed values. Reconstruction time and results depend on
+the method, acquisition, and available hardware. See the [QSMxT algorithm
+reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the
+methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
 
 ## Adjust the brain mask
 
