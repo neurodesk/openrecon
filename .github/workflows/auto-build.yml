@@ -1,7 +1,6 @@
 name: auto-build
 permissions:
   contents: read
-  id-token: write
 
 on:
   push:
@@ -22,7 +21,7 @@ jobs:
         fetch-depth: 0
     - name: Find all recipe directories with changes
       id: find_changed_dirs
-      uses: tj-actions/changed-files@v47
+      uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62  # v47.0.0
       with:
         files: "recipes/**"
         dir_names: "true"
@@ -52,6 +51,11 @@ jobs:
 
   build-apps:
     needs: list-apps
+    # Only build-apps assumes the AWS role. Granting id-token here, not at workflow
+    # level, stops list-apps (third-party action) from minting an OIDC token.
+    permissions:
+      contents: read
+      id-token: write
     if: ${{ needs.list-apps.outputs.app_list != '' && needs.list-apps.outputs.app_list != '[]' }}
     uses: ./.github/workflows/build-apps.yml
     with:
