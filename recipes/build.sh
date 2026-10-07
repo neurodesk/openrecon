@@ -338,10 +338,13 @@ else
     fi
 fi
 
-# Preferred local lookup order:
-# 1) explicit localDockerImage override
-# 2) canonical local name:version (tool:version)
-# 3) baseDockerImage tag itself
+# Explicit tags and digests identify the source build. A canonical alias may
+# refer to an older build, so only use that convenience for implicit latest.
+BASE_IMAGE_REFERENCE="${baseDockerImage##*/}"
+if [[ "$BASE_IMAGE_REFERENCE" == *:* || "$baseDockerImage" == *@* ]]; then
+    CANONICAL_LOCAL_TAG=""
+fi
+
 echo "🐳 Checking host Docker daemon..."
 docker_context=$(docker context show 2>/dev/null || echo "unknown")
 if ! docker_with_timeout ps --format '{{.ID}}' >/dev/null 2>&1; then

@@ -1,18 +1,41 @@
 #!/usr/bin/env python3
 """
 CI validation script that uses the validateJson function from build.py.
-Handles VERSION_WILL_BE_REPLACED_BY_SCRIPT placeholder for validation purposes.
+Resolves scanner version placeholders from literal params.sh assignments.
 """
 
 import sys
 import os
 import json
 import tempfile
+import re
 from pathlib import Path
 
 # Import validators from build.py
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'recipes'))
-from build import validateJson, validate_openrecon_label_metadata
+from build import validateJson, validate_openrecon_label_metadata, validate_scanner_version
+
+
+def scanner_version_from_params(params_path):
+    """Read only literal version assignments; never execute recipe shell code."""
+    values = {}
+    assignment = re.compile(r'^\s*(?:export\s+)?(version|VERSION|openrecon_version)=(.*)$')
+    for line in params_path.read_text().splitlines():
+        match = assignment.match(line)
+        if not match:
+            continue
+        name, raw = match.groups()
+        literal = re.fullmatch(
+            r"(?:'([A-Za-z0-9._+-]+)'|\"([A-Za-z0-9._+-]+)\"|([A-Za-z0-9._+-]+))(?:\s+#.*)?\s*",
+            raw,
+        )
+        if literal is None:
+            raise ValueError(f'{params_path}: {name} must be a literal value, without shell expansion.')
+        values[name] = next(value for value in literal.groups() if value is not None)
+    version = values.get('openrecon_version', values.get('version', values.get('VERSION')))
+    if version is not None:
+        validate_scanner_version(version)
+    return version
 
 
 def validate_recipe(recipe_json_path, schema_path):
@@ -30,21 +53,21 @@ def validate_recipe(recipe_json_path, schema_path):
     with open(recipe_json_path, 'r') as f:
         json_data = json.load(f)
     
-    # Replace VERSION_WILL_BE_REPLACED_BY_SCRIPT with a valid version for validation
-    if 'general' in json_data and 'version' in json_data['general']:
-        if json_data['general']['version'] == 'VERSION_WILL_BE_REPLACED_BY_SCRIPT':
-            json_data['general']['version'] = '0.0.0'
-    
-    if 'general' in json_data and 'regulatory_information' in json_data['general']:
-        reg_info = json_data['general']['regulatory_information']
-        if 'production_identifier' in reg_info:
-            if reg_info['production_identifier'] == 'VERSION_WILL_BE_REPLACED_BY_SCRIPT':
-                reg_info['production_identifier'] = '0.0.0'
-        if 'material_number' in reg_info:
-            reg_info['material_number'] = reg_info['material_number'].replace(
-                'VERSION_WILL_BE_REPLACED_BY_SCRIPT', '0.0.0'
+    try:
+        version = scanner_version_from_params(Path(recipe_json_path).with_name('params.sh'))
+        label_version = json_data.get('general', {}).get('version')
+        if version is None:
+            version = label_version
+            validate_scanner_version(version)
+        if label_version not in ('VERSION_WILL_BE_REPLACED_BY_SCRIPT', version):
+            raise ValueError(
+                f'general.version {label_version!r} does not match params.sh scanner version {version!r}.'
             )
-    
+        json_data = json.loads(json.dumps(json_data).replace('VERSION_WILL_BE_REPLACED_BY_SCRIPT', version))
+    except (ValueError, OSError) as error:
+        print(error)
+        return False
+
     # Write to temporary file for validation
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
         json.dump(json_data, tmp, indent=2)

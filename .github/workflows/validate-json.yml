@@ -5,6 +5,10 @@ on:
     paths:
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_*.json'
+      - 'recipes/**/params.sh'
+      - 'recipes/build.py'
+      - 'recipes/build.sh'
+      - 'tests/**'
       - '.github/scripts/validate_recipes.py'
       - '.github/workflows/validate-json.yml'
 
@@ -26,30 +30,14 @@ jobs:
           
       - name: Install dependencies
         run: |
-          pip install jsonschema
+          pip install jsonschema packaging
           
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62  # v47.0.0
-        with:
-          files: 'recipes/**/OpenReconLabel.json'
-          
-      - name: Validate changed OpenReconLabel.json files
-        if: steps.changed-files.outputs.any_changed == 'true'
+      - name: Test scanner metadata and image selection
         run: |
-          echo "Changed OpenReconLabel.json files:"
-          echo "${{ steps.changed-files.outputs.all_changed_files }}"
-          echo ""
-          
-          # Run validation on changed files using build.py validation function
-          python3 .github/scripts/validate_recipes.py ${{ steps.changed-files.outputs.all_changed_files }}
-          
-      - name: Validate all OpenReconLabel.json files
-        if: steps.changed-files.outputs.any_changed == 'false'
-        run: |
-          echo "No OpenReconLabel.json files changed, but schema or validation script changed."
-          echo "Validating all OpenReconLabel.json files to ensure schema changes don't break existing files..."
-          echo ""
-          
-          # Run validation on all files using build.py validation function
-          python3 .github/scripts/validate_recipes.py
+          python3 -m unittest discover -s tests -p test_openrecon_label_validation.py
+          python3 -m unittest discover -s tests -p test_scanner_versions.py
+          python3 -m unittest discover -s tests -p test_base_image_selection.py
+          bash -n recipes/build.sh
+
+      - name: Validate all recipe metadata and versions
+        run: python3 .github/scripts/validate_recipes.py

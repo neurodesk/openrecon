@@ -214,7 +214,17 @@ def get_parameter_label(parameter):
     return f'{parameter_type} parameter {parameter_id!r}'
 
 
+def validate_scanner_version(version):
+    if not isinstance(version, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise ValueError(
+            f'OpenReconLabel.json general.version must be numeric X.Y.Z: {version!r}. '
+            'Use a numeric version or openrecon_version in params.sh; '
+            'keep source build tags in baseDockerImage.'
+        )
+
+
 def validate_openrecon_label_metadata(json_data):
+    validate_scanner_version(json_data.get("general", {}).get("version"))
     errors = []
     try:
         get_machine_package_name(json_data)
