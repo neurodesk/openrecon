@@ -175,6 +175,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             label_path = pathlib.Path(tmpdir) / 'OpenReconLabel.json'
             label_path.write_text(json.dumps(label))
+            (pathlib.Path(tmpdir) / 'params.sh').write_text('export version=1.0.0\n')
             result = subprocess.run(
                 [sys.executable, str(VALIDATE_RECIPES_PY), str(label_path)],
                 capture_output=True,
