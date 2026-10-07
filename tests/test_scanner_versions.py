@@ -63,6 +63,11 @@ class ScannerVersionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('numeric X.Y.Z', result.stdout)
 
+    def test_ci_rejects_uppercase_only_version_for_placeholder(self):
+        result = self.validate_params('export VERSION=1.0.0\n')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('numeric X.Y.Z', result.stdout)
+
     def test_ci_rejects_hash_attached_to_unquoted_version(self):
         result = self.validate_params('export version=1.0.0#suffix\n')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
