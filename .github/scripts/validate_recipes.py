@@ -19,7 +19,7 @@ from build import validateJson, validate_openrecon_label_metadata, validate_scan
 def scanner_version_from_params(params_path):
     """Read only literal version assignments; never execute recipe shell code."""
     values = {}
-    assignment = re.compile(r'^\s*(?:export\s+)?(version|VERSION|openrecon_version)=(.*)$')
+    assignment = re.compile(r'^\s*(?:export\s+)?(version|openrecon_version)=(.*)$')
     for line in params_path.read_text().splitlines():
         match = assignment.match(line)
         if not match:
@@ -32,7 +32,7 @@ def scanner_version_from_params(params_path):
         if literal is None:
             raise ValueError(f'{params_path}: {name} must be a literal value, without shell expansion.')
         values[name] = next(value for value in literal.groups() if value is not None)
-    version = values.get('openrecon_version', values.get('version', values.get('VERSION')))
+    version = values.get('openrecon_version', values.get('version'))
     if version is not None:
         validate_scanner_version(version)
     return version
