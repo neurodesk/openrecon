@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import shlex
 import pathlib
 import subprocess
 import sys
@@ -701,6 +703,46 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('resolve_openrecon_python()', startup_script)
         self.assertIn('python3 python python3.11', startup_script)
         self.assertIn('OPENRECON_FIRE_VALIDATE_STARTUP', startup_script)
+
+    def test_fire_startup_script_executes_directly_with_image_environment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            (root / 'ismrmrd.py').write_text('')
+            env_script = root / 'image-env.sh'
+            env_script.write_text(
+                f'export OPENRECON_PYTHON={shlex.quote(sys.executable)}\n'
+                f'export PYTHONPATH={shlex.quote(tmpdir)}\n'
+                'export IMAGE_VALUE=loaded\n'
+            )
+            command = (
+                '"$OPENRECON_PYTHON" -c '
+                + shlex.quote(
+                    'import os; print(os.environ["IMAGE_VALUE"]); '
+                    'print(os.environ["LOG_PATH"]); print(os.environ["FIRE_LOG_PATH"])'
+                )
+            )
+            with mock.patch.object(openrecon_build, 'FIRE_ENV_SCRIPT_PATH', str(env_script)):
+                script = openrecon_build.create_fire_startup_script_text(command)
+            script_path = root / 'startup.sh'
+            script_path.write_text(script.replace('/usr/sbin/ldconfig', ':'))
+            script_path.chmod(0o755)
+            log_path = root / 'logs' / 'server.log'
+            environment = os.environ.copy()
+            environment.pop(openrecon_build.FIRE_STARTUP_VALIDATION_ENV, None)
+
+            result = subprocess.run(
+                [str(script_path), str(log_path)], env=environment,
+                capture_output=True, text=True, check=True,
+            )
+
+            self.assertEqual(result.stdout.splitlines(), ['loaded', str(log_path), str(log_path)])
+            self.assertTrue(log_path.parent.is_dir())
+            environment[openrecon_build.FIRE_STARTUP_VALIDATION_ENV] = '1'
+            validated = subprocess.run(
+                [str(script_path), str(log_path)], env=environment,
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(validated.stdout, '')
 
     def test_fire_startup_executable_supports_conda_override(self):
         command = '/opt/conda/bin/python3 /opt/code/python-ismrmrd-server/main.py -v -l "$LOG_PATH"'
