@@ -61,3 +61,11 @@ Optional FIRE overrides can be exported from a recipe `params.sh` when needed:
 - `fireHostname`
 - `firePort`
 - `fireBundleName`
+
+## Experimental raw acquisition return
+
+`../build.sh --experimental-raw-return` permits research labels with both
+`emitter=raw` and `injector=raw`. The option extends validation for that build
+without changing the stock schema. It does not supply a native ICE adapter or
+make raw acquisition reinsertion compatible with the stock scanner injector.
+Ordinary builds continue to reject raw-return labels.
