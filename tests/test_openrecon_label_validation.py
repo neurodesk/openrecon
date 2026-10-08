@@ -708,5 +708,51 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertEqual(openrecon_build.get_fire_startup_executable(command), '/opt/conda/bin/python3')
 
 
+class ExperimentalRawValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.label_path = pathlib.Path(self.directory.name) / 'label.json'
+        self.schema_path = REPO_ROOT / 'recipes' / 'OpenReconSchema_1.1.0.json'
+        self.label = json.loads((REPO_ROOT / 'recipes' / 'b0map' / 'OpenReconLabel.json').read_text())
+        self.label['general']['version'] = '1.0.0'
+        for key in ('production_identifier', 'material_number'):
+            self.label['general']['regulatory_information'][key] = '1.0.0'
+        self.label['reconstruction'].update(emitter='raw', injector='raw', content_qualification_type='RESEARCH')
+
+    def validate(self, experimental=False):
+        self.label_path.write_text(json.dumps(self.label))
+        return openrecon_build.validateJson(
+            self.label_path, self.schema_path, experimental_raw_return=experimental,
+        )
+
+    def test_only_explicit_extension_accepts_raw_without_modifying_schema(self):
+        before = self.schema_path.read_bytes()
+        self.assertFalse(self.validate())
+        self.assertTrue(self.validate(True))
+        self.assertEqual(before, self.schema_path.read_bytes())
+        openrecon_build.validate_openrecon_label_metadata(self.label)
+
+    def test_extension_preserves_types_and_research_contract(self):
+        for field, value in [('emitter', 'image'), ('content_qualification_type', 'PRODUCT'),
+                             ('injector', 'raww'), ('port', '9002'), ('can_use_gpu', 'false')]:
+            with self.subTest(field=field):
+                original = self.label['reconstruction'][field]
+                self.label['reconstruction'][field] = value
+                self.assertFalse(self.validate(True))
+                self.label['reconstruction'][field] = original
+
+    def test_opt_in_leaves_image_labels_unchanged(self):
+        self.label['reconstruction'].update(emitter='image', injector='image')
+        self.assertTrue(self.validate())
+        self.assertTrue(self.validate(True))
+
+    def test_metadata_checks_remain_required(self):
+        self.assertTrue(self.validate(True))
+        self.label['parameters'] = []
+        with self.assertRaises(ValueError):
+            openrecon_build.validate_openrecon_label_metadata(self.label)
+
+
 if __name__ == '__main__':
     unittest.main()

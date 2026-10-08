@@ -184,7 +184,7 @@ def create_openrecon_python_runtime_command(log_path):
     )
 
 
-def validateJson(jsonFilePath, schemaFilePath):
+def validateJson(jsonFilePath, schemaFilePath, *, experimental_raw_return=False):
     try:
         with open(jsonFilePath, 'r') as jsonFile:
             jsonData = json.load(jsonFile)
@@ -192,6 +192,19 @@ def validateJson(jsonFilePath, schemaFilePath):
         with open(schemaFilePath, 'r') as schemaFile:
             schemaData = json.load(schemaFile)
 
+        reconstruction = jsonData.get('reconstruction', {})
+        if not isinstance(reconstruction, dict):
+            reconstruction = {}
+        if experimental_raw_return and reconstruction.get('injector') == 'raw':
+            if (reconstruction.get('emitter') != 'raw'
+                    or reconstruction.get('content_qualification_type') != 'RESEARCH'):
+                raise ValueError('Experimental raw return requires raw emitter and RESEARCH qualification')
+            injector = schemaData['properties']['reconstruction']['properties']['injector']
+            injector['enum'].append('raw')
+            print(
+                'EXPERIMENTAL raw-return package: stock OpenRecon injection is unsupported; '
+                'custom ICE adapter required.'
+            )
         validator = jsonschema.Draft7Validator(schemaData)
         errors = list(validator.iter_errors(jsonData))
 
@@ -1349,7 +1362,10 @@ if __name__ == '__main__':
     createOpenReconPackage = packageSelection in {'openrecon', 'both'}
     createFirePackage = packageSelection in {'fire', 'both'}
 
-    if not validateJson(jsonFilePath, schemaFilePath):
+    if not validateJson(
+        jsonFilePath, schemaFilePath,
+        experimental_raw_return=os.getenv("EXPERIMENTAL_RAW_RETURN", "false") == "true",
+    ):
         raise Exception('Not writing Dockerfile because JSON is not valid')
 
     with open(jsonFilePath, 'r') as jsonFile:

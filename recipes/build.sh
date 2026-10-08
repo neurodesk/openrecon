@@ -8,6 +8,7 @@ REPOSITORY_ROOT=$(cd -- "$BUILD_SCRIPT_DIR/.." && pwd)
 # Command-line options
 IGNORE_MDPDF=false
 FORCE_LOCAL_CACHE=false
+EXPERIMENTAL_RAW_RETURN=false
 BUILD_PACKAGE_SELECTION=${BUILD_PACKAGE_SELECTION:-openrecon}
 
 usage() {
@@ -15,6 +16,7 @@ usage() {
 Usage: /bin/bash ../build.sh [options]
 
 Options:
+  --experimental-raw-return    Allow research raw-return metadata; requires custom ICE adapter
   --ignore-mdpdf               Skip README.md -> README.pdf generation
   --local-cache                Force using an already-cached local base Docker image
                                (auto-preloads the DinD bootstrap image if needed)
@@ -24,6 +26,10 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --experimental-raw-return)
+            EXPERIMENTAL_RAW_RETURN=true
+            shift
+            ;;
         --ignore-mdpdf)
             IGNORE_MDPDF=true
             shift
@@ -108,6 +114,7 @@ case "$BUILD_PACKAGE_SELECTION" in
 esac
 
 export BUILD_PACKAGE_SELECTION
+export EXPERIMENTAL_RAW_RETURN
 echo "Package selection: $BUILD_PACKAGE_SELECTION"
 
 # Cleanup function to restore backup on exit (including interruptions)
