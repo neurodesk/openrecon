@@ -9,7 +9,10 @@ on:
       - 'recipes/build.py'
       - 'recipes/build.sh'
       - 'tests/**'
-      - '.github/scripts/validate_recipes.py'
+      - '.github/scripts/*.py'
+      - '.github/workflows/build-config.json'
+      - '.github/workflows/auto-build.yml'
+      - '.github/workflows/build-experimental-openrecon.yml'
       - '.github/workflows/validate-json.yml'
 
 jobs:
@@ -37,6 +40,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_openrecon_label_validation.py
           python3 -m unittest discover -s tests -p test_scanner_versions.py
           python3 -m unittest discover -s tests -p test_base_image_selection.py
+          python3 -m unittest discover -s tests -p test_build_policy.py
           bash -n recipes/build.sh
 
       - name: Validate all recipe metadata and versions

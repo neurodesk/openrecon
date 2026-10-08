@@ -15,6 +15,7 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, 'skipci') && !contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip-ci') }}
     outputs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
+      experimental_app_list: ${{ steps.find_changed_recipes.outputs.experimental_app_list }}
     steps:
     - uses: actions/checkout@v5
       with:
@@ -26,28 +27,13 @@ jobs:
         files: "recipes/**"
         dir_names: "true"
         json: "true"
+        escape_json: "false"
     - name: Filter down to changed recipes
       id: find_changed_recipes
       if: steps.find_changed_dirs.outputs.any_changed == 'true'
-      run: |
-        # Get dir changelist -> convert list to json -> extract app name only -> remove duplicate apps
-        changed_recipes=$(echo "${{ steps.find_changed_dirs.outputs.all_changed_files }}" | jq -rc '.[]'  | cut -d/ -s -f 2-2 | jq -ncR '[inputs]' | jq -rc 'unique')
-        echo "changed_recipes=${changed_recipes}"
-        
-        app_list='['
-        for APPLICATION in $(echo "${changed_recipes}" | jq -r '.[]'); do
-          AUTOBUILD=$(cat .github/workflows/build-config.json | jq ".${APPLICATION} .autoBuild")
-          [ "$AUTOBUILD" == "null" ] && AUTOBUILD=$(cat .github/workflows/build-config.json | jq ".default .autoBuild")
-          if [ "$AUTOBUILD" = "true" ]; then
-              app_list+="\"${APPLICATION}\","
-          else
-              echo "$APPLICATION:autoBuild:$AUTOBUILD in build-config.json"
-          fi
-        done
-        app_list=$(sed '$s/,$//' <<< $app_list)
-        app_list+=']'
-        echo "app_list=${app_list}"
-        echo "app_list=${app_list}" >> $GITHUB_OUTPUT
+      env:
+        CHANGED_PATHS: ${{ steps.find_changed_dirs.outputs.all_changed_files }}
+      run: python3 .github/scripts/build_policy.py route "$CHANGED_PATHS" >> "$GITHUB_OUTPUT"
 
   build-apps:
     needs: list-apps
@@ -60,4 +46,15 @@ jobs:
     uses: ./.github/workflows/build-apps.yml
     with:
       applications: ${{ needs.list-apps.outputs.app_list }}
+    secrets: inherit
+
+  build-experimental:
+    needs: list-apps
+    permissions:
+      contents: read
+      id-token: write
+    if: ${{ needs.list-apps.outputs.experimental_app_list != '' && needs.list-apps.outputs.experimental_app_list != '[]' }}
+    uses: ./.github/workflows/build-experimental-openrecon.yml
+    with:
+      applications: ${{ needs.list-apps.outputs.experimental_app_list }}
     secrets: inherit
