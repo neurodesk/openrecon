@@ -1,0 +1,107 @@
+name: build-experimental-openrecon
+
+on:
+  workflow_call:
+    inputs:
+      applications:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      applications:
+        description: JSON array of registered experimental recipe names
+        required: true
+        default: '["kspacefilter"]'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  selection:
+    runs-on: ubuntu-latest
+    outputs:
+      applications: ${{ steps.select.outputs.applications }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: select
+        env:
+          APPLICATIONS: ${{ inputs.applications }}
+        run: |
+          selection=$(python3 .github/scripts/build_policy.py select "$APPLICATIONS")
+          echo "applications=$selection" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: selection
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ fromJSON(needs.selection.outputs.applications) }}
+    concurrency:
+      group: experimental-openrecon-${{ matrix.application }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      APPLICATION: ${{ matrix.application }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
+          clean: true
+      - name: Build and verify actual experimental bundle
+        working-directory: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/build_policy.py select "[\"$APPLICATION\"]"
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python3 -m pip install jsonschema packaging pypdf==6.19.0
+          source "recipes/$APPLICATION/params.sh"
+          docker pull "$baseDockerImage"
+          rm -rf "recipes/$APPLICATION/openrecon" "recipes/$APPLICATION/fire"
+          (cd "recipes/$APPLICATION" && BUILD_PACKAGE_SELECTION=openrecon /bin/bash ../build.sh --experimental-raw-return)
+          expected="recipes/$APPLICATION/openrecon/OpenRecon_neurodesk_${APPLICATION}_V${version}.zip"
+          mapfile -t archives < <(find "recipes/$APPLICATION" -type f -name '*.zip')
+          test "${#archives[@]}" -eq 1
+          test "${archives[0]}" = "$expected"
+          test ! -e "recipes/$APPLICATION/fire"
+          python3 "recipes/$APPLICATION/verify-package.py" "$expected" --source-image "$baseDockerImage"
+          ZIPFILE=$(realpath "$expected")
+          ZIPNAME=$(basename "$ZIPFILE")
+          DIGEST=$(sha256sum "$ZIPFILE" | cut -d ' ' -f 1)
+          printf '%s  %s\n' "$DIGEST" "$ZIPNAME" > "$ZIPFILE.sha256"
+          {
+            echo "ZIPFILE=$ZIPFILE"
+            echo "ZIPNAME=$ZIPNAME"
+            echo "DIGEST=$DIGEST"
+            echo "SOURCE_IMAGE=$baseDockerImage"
+          } >> "$GITHUB_ENV"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@99214aa6889fcddfa57764031d71add364327e59
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Publish and verify anonymous public bytes
+        working-directory: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
+        run: |
+          set -euo pipefail
+          /bin/bash .github/workflows/upload-zip.sh "$ZIPFILE"
+          aws s3 cp "$ZIPFILE.sha256" "s3://openrecon/$ZIPNAME.sha256"
+          download=$(mktemp -d)
+          trap 'rm -rf "$download"' EXIT
+          url="https://openrecon.s3.us-east-2.amazonaws.com/$ZIPNAME"
+          curl --fail --silent --show-error "$url" -o "$download/$ZIPNAME"
+          curl --fail --silent --show-error "$url.sha256" -o "$download/$ZIPNAME.sha256"
+          cmp "$ZIPFILE.sha256" "$download/$ZIPNAME.sha256"
+          (cd "$download" && sha256sum --check "$ZIPNAME.sha256")
+          {
+            echo "Experimental raw/raw RESEARCH bundle: $url"
+            echo "SHA256 sidecar: $url.sha256"
+            echo "Verified public ZIP SHA256: $DIGEST"
+            echo "Source image: $SOURCE_IMAGE"
+            echo "Package runtime and archived PDF verified before publication."
+            echo "A separately implemented custom ICE adapter and site validation are required. Native raw ICE adapter absent; scanner compatibility is unverified."
+          } >> "$GITHUB_STEP_SUMMARY"

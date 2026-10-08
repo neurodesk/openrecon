@@ -13,6 +13,7 @@ from pathlib import Path
 
 # Import validators from build.py
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'recipes'))
+from build_policy import experimental_label
 from build import validateJson, validate_openrecon_label_metadata, validate_scanner_version
 
 
@@ -75,7 +76,7 @@ def validate_recipe(recipe_json_path, schema_path):
     
     try:
         # Use the existing validateJson function from build.py
-        if not validateJson(tmp_path, schema_path):
+        if not validateJson(tmp_path, schema_path, experimental_raw_return=experimental_label(recipe_json_path)):
             return False
         try:
             validate_openrecon_label_metadata(json_data)

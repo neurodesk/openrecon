@@ -6,5 +6,10 @@
     "template": {
         "autoBuild": true,
         "freeUpSpace": false
+    },
+    "kspacefilter": {
+        "autoBuild": true,
+        "freeUpSpace": false,
+        "buildProfile": "experimental-openrecon-raw"
     }
 }
