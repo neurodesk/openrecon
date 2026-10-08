@@ -178,7 +178,7 @@ def create_openrecon_python_runtime_command(log_path):
         f'''\
         set -eu
         /usr/sbin/ldconfig
-        {create_openrecon_python_resolver_script()}
+{textwrap.indent(create_openrecon_python_resolver_script().rstrip(), "        ")}
         exec "$OPENRECON_PYTHON" /opt/code/python-ismrmrd-server/main.py -v -H=0.0.0.0 -p=9002 -l={log_path}
         '''
     )
@@ -625,7 +625,7 @@ def create_fire_startup_script_text(fire_server_command):
         export LOG_PATH
         export FIRE_LOG_PATH="$LOG_PATH"
         /usr/sbin/ldconfig
-        {create_openrecon_python_resolver_script()}
+{textwrap.indent(create_openrecon_python_resolver_script().rstrip(), "        ")}
         if [ "{validation_env_expansion}" = "1" ]; then
 {validation_script}
         fi
@@ -1313,6 +1313,10 @@ def build_artifacts_in_dind(
             fi
             if ! chroot "${{mount_dir}}" /bin/sh -c 'test -x {startup_script_path}'; then
                 echo "❌ FIRE image validation failed: generated startup script is missing or not executable"
+                exit 1
+            fi
+            if [ "$(head -n 1 "${{mount_dir}}/{startup_script_rel}")" != '#!/bin/sh' ]; then
+                echo "❌ FIRE image validation failed: generated startup script must begin with #!/bin/sh"
                 exit 1
             fi
             if ! chroot "${{mount_dir}}" /bin/sh -c 'OPENRECON_FIRE_VALIDATE_STARTUP=1 "$1"' sh {startup_script_path_quoted}; then
