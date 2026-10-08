@@ -88,8 +88,13 @@ jobs:
         working-directory: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
         run: |
           set -euo pipefail
-          /bin/bash .github/workflows/upload-zip.sh "$ZIPFILE"
-          aws s3 cp "$ZIPFILE.sha256" "s3://openrecon/$ZIPNAME.sha256"
+          aws s3api put-object --if-none-match '*' --generate-cli-skeleton input > /dev/null
+          echo "Publication creates each versioned key once; existing keys fail without overwriting."
+          echo "ZIP and SHA256 are separate writes. A sidecar failure can leave a published ZIP; rerunning that version fails."
+          echo "Recover a missing sidecar manually from the original CI digest after verifying the published ZIP."
+          echo "ZIP SHA256 before publication: $DIGEST"
+          aws s3api put-object --bucket openrecon --key "$ZIPNAME" --body "$ZIPFILE" --if-none-match '*'
+          aws s3api put-object --bucket openrecon --key "$ZIPNAME.sha256" --body "$ZIPFILE.sha256" --if-none-match '*'
           download=$(mktemp -d)
           trap 'rm -rf "$download"' EXIT
           url="https://openrecon.s3.us-east-2.amazonaws.com/$ZIPNAME"

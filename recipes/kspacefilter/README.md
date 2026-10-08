@@ -21,6 +21,15 @@ raw/raw label. The shared stock schema remains unchanged. Memory and CPU fields
 are packaging requirements, not measured scanner qualification or performance
 claims; qualify resources on the target system before use.
 
+## Publication and retries
+
+The experimental workflow creates each versioned ZIP and SHA256 sidecar only
+if its S3 key is absent. Existing keys fail without overwriting published bytes,
+so rerunning a published version fails. The two writes are separate; a sidecar
+failure can leave a published ZIP. Recover a missing sidecar manually using the
+original CI digest after verifying the published ZIP. The workflow verifies both
+objects through anonymous public downloads before reporting success.
+
 ## Hello-world acquisition exchange
 
 A custom ICE adapter must emit acquisitions over MRD TCP on port 9002 and receive
