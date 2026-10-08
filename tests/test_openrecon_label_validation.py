@@ -708,10 +708,6 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertEqual(openrecon_build.get_fire_startup_executable(command), '/opt/conda/bin/python3')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ExperimentalRawValidationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -756,3 +752,7 @@ class ExperimentalRawValidationTests(unittest.TestCase):
         self.label['parameters'] = []
         with self.assertRaises(ValueError):
             openrecon_build.validate_openrecon_label_metadata(self.label)
+
+
+if __name__ == '__main__':
+    unittest.main()
