@@ -873,7 +873,7 @@ def create_fire_workflow_xml_text(config_id, fire_ini_name):
             <IniFile>%CustomerIceProgs%\\fire\\{fire_ini_name}</IniFile>
             <Config>{config_id}</Config>
             <LocalConfig></LocalConfig>
-            <JsonConfig></JsonConfig>
+            <JsonConfig>%CustomerIceProgs%\\fire\\config\\{get_fire_config_filename(config_id)}</JsonConfig>
             <ParameterMap>%CustomerIceProgs%\\fire\\wip_070_fire_IsmrmrdParameterMap_Siemens.xml</ParameterMap>
             <XslStylesheet>%CustomerIceProgs%\\fire\\wip_070_fire_IsmrmrdParameterMap_Siemens.xsl</XslStylesheet>
             <SendWaveformData>false</SendWaveformData>
