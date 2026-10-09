@@ -1,10 +1,13 @@
 import importlib.util
 import json
+import os
+import shlex
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 
@@ -375,6 +378,59 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.ipr').exists())
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.xml').exists())
 
+    def test_generated_fire_workflow_loads_bundled_default_config(self):
+        for config_ids in [('primary',), ('alternative', 'primary')]:
+            with self.subTest(config_ids=config_ids), tempfile.TemporaryDirectory() as tmpdir:
+                label = base_label([
+                    config_parameter(
+                        values=[{'id': value, 'name': {'en': value}} for value in config_ids],
+                        default='primary',
+                    ),
+                    {'id': 'incomingB0phase', 'type': 'choice', 'default': 'siemens'},
+                    {'id': 'sendoriginal', 'type': 'boolean', 'default': False},
+                ])
+                tmpdir = pathlib.Path(tmpdir)
+                recipe_dir = tmpdir / 'recipe'
+                recipe_dir.mkdir()
+                stage_dir = tmpdir / 'stage'
+                fire_img = tmpdir / 'test.img'
+                docs = tmpdir / 'test.pdf'
+                fire_img.write_text('img')
+                docs.write_text('pdf')
+
+                openrecon_build.build_fire_bundle_stage(
+                    stage_dir=stage_dir,
+                    fire_img_path=fire_img,
+                    fire_ini_name=openrecon_build.get_fire_ini_filename('test'),
+                    fire_ini_text='[chroot]\n',
+                    install_text='install\n',
+                    docs_source_path=docs,
+                    json_data=label,
+                    package_name='test',
+                    recipe_dir=recipe_dir,
+                )
+
+                ice_dir = stage_dir / 'Ice'
+                workflow = ET.parse(ice_dir / 'wip_070_fire_test.xml')
+                marshal = workflow.getroot().find('{OpenRecon}Marshal')
+                self.assertEqual(marshal.findtext('{OpenRecon}Config'), 'primary')
+                config_reference = marshal.findtext('{OpenRecon}JsonConfig')
+                reference_parts = pathlib.PureWindowsPath(config_reference).parts
+                self.assertTrue(reference_parts, 'Generated workflow must load its bundled JSON settings')
+                self.assertEqual(reference_parts[0], '%CustomerIceProgs%')
+                config_path = ice_dir.joinpath(*reference_parts[1:])
+                config = json.loads(config_path.read_text())
+                self.assertEqual(config['parameters'], {
+                    'config': 'primary',
+                    'incomingB0phase': 'siemens',
+                    'sendoriginal': False,
+                })
+                for config_id in config_ids:
+                    bundled_config = json.loads(
+                        (ice_dir / 'fire' / 'config' / f'wip_070_fire_{config_id}.json').read_text()
+                    )
+                    self.assertEqual(bundled_config['parameters']['config'], config_id)
+
     def test_fire_bundle_stage_uses_exact_recipe_workflow_file_overrides(self):
         label = base_label(
             [
@@ -701,6 +757,46 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         self.assertIn('resolve_openrecon_python()', startup_script)
         self.assertIn('python3 python python3.11', startup_script)
         self.assertIn('OPENRECON_FIRE_VALIDATE_STARTUP', startup_script)
+
+    def test_fire_startup_script_executes_directly_with_image_environment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            (root / 'ismrmrd.py').write_text('')
+            env_script = root / 'image-env.sh'
+            env_script.write_text(
+                f'export OPENRECON_PYTHON={shlex.quote(sys.executable)}\n'
+                f'export PYTHONPATH={shlex.quote(tmpdir)}\n'
+                'export IMAGE_VALUE=loaded\n'
+            )
+            command = (
+                '"$OPENRECON_PYTHON" -c '
+                + shlex.quote(
+                    'import os; print(os.environ["IMAGE_VALUE"]); '
+                    'print(os.environ["LOG_PATH"]); print(os.environ["FIRE_LOG_PATH"])'
+                )
+            )
+            with mock.patch.object(openrecon_build, 'FIRE_ENV_SCRIPT_PATH', str(env_script)):
+                script = openrecon_build.create_fire_startup_script_text(command)
+            script_path = root / 'startup.sh'
+            script_path.write_text(script.replace('/usr/sbin/ldconfig', ':'))
+            script_path.chmod(0o755)
+            log_path = root / 'logs' / 'server.log'
+            environment = os.environ.copy()
+            environment.pop(openrecon_build.FIRE_STARTUP_VALIDATION_ENV, None)
+
+            result = subprocess.run(
+                [str(script_path), str(log_path)], env=environment,
+                capture_output=True, text=True, check=True,
+            )
+
+            self.assertEqual(result.stdout.splitlines(), ['loaded', str(log_path), str(log_path)])
+            self.assertTrue(log_path.parent.is_dir())
+            environment[openrecon_build.FIRE_STARTUP_VALIDATION_ENV] = '1'
+            validated = subprocess.run(
+                [str(script_path), str(log_path)], env=environment,
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(validated.stdout, '')
 
     def test_fire_startup_executable_supports_conda_override(self):
         command = '/opt/conda/bin/python3 /opt/code/python-ismrmrd-server/main.py -v -l "$LOG_PATH"'
