@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 
@@ -376,6 +377,59 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertFalse((stage_dir / 'wip_070_fire_IceFireImageAddin_VesselBoost.xml').exists())
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.ipr').exists())
             self.assertFalse((ice_dir / 'wip_070_fire_IceFireImageAddin_openreconi2iexample.xml').exists())
+
+    def test_generated_fire_workflow_loads_bundled_default_config(self):
+        for config_ids in [('primary',), ('alternative', 'primary')]:
+            with self.subTest(config_ids=config_ids), tempfile.TemporaryDirectory() as tmpdir:
+                label = base_label([
+                    config_parameter(
+                        values=[{'id': value, 'name': {'en': value}} for value in config_ids],
+                        default='primary',
+                    ),
+                    {'id': 'incomingB0phase', 'type': 'choice', 'default': 'siemens'},
+                    {'id': 'sendoriginal', 'type': 'boolean', 'default': False},
+                ])
+                tmpdir = pathlib.Path(tmpdir)
+                recipe_dir = tmpdir / 'recipe'
+                recipe_dir.mkdir()
+                stage_dir = tmpdir / 'stage'
+                fire_img = tmpdir / 'test.img'
+                docs = tmpdir / 'test.pdf'
+                fire_img.write_text('img')
+                docs.write_text('pdf')
+
+                openrecon_build.build_fire_bundle_stage(
+                    stage_dir=stage_dir,
+                    fire_img_path=fire_img,
+                    fire_ini_name=openrecon_build.get_fire_ini_filename('test'),
+                    fire_ini_text='[chroot]\n',
+                    install_text='install\n',
+                    docs_source_path=docs,
+                    json_data=label,
+                    package_name='test',
+                    recipe_dir=recipe_dir,
+                )
+
+                ice_dir = stage_dir / 'Ice'
+                workflow = ET.parse(ice_dir / 'wip_070_fire_test.xml')
+                marshal = workflow.getroot().find('{OpenRecon}Marshal')
+                self.assertEqual(marshal.findtext('{OpenRecon}Config'), 'primary')
+                config_reference = marshal.findtext('{OpenRecon}JsonConfig')
+                reference_parts = pathlib.PureWindowsPath(config_reference).parts
+                self.assertTrue(reference_parts, 'Generated workflow must load its bundled JSON settings')
+                self.assertEqual(reference_parts[0], '%CustomerIceProgs%')
+                config_path = ice_dir.joinpath(*reference_parts[1:])
+                config = json.loads(config_path.read_text())
+                self.assertEqual(config['parameters'], {
+                    'config': 'primary',
+                    'incomingB0phase': 'siemens',
+                    'sendoriginal': False,
+                })
+                for config_id in config_ids:
+                    bundled_config = json.loads(
+                        (ice_dir / 'fire' / 'config' / f'wip_070_fire_{config_id}.json').read_text()
+                    )
+                    self.assertEqual(bundled_config['parameters']['config'], config_id)
 
     def test_fire_bundle_stage_uses_exact_recipe_workflow_file_overrides(self):
         label = base_label(
