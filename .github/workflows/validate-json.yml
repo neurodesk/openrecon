@@ -6,6 +6,8 @@ on:
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_*.json'
       - 'recipes/**/params.sh'
+      - 'recipes/**/README.md'
+      - 'recipes/checkReadmeIssues.py'
       - 'recipes/build.py'
       - 'recipes/build.sh'
       - 'tests/**'
@@ -31,6 +33,9 @@ jobs:
         with:
           python-version: '3.x'
           
+      - name: Validate recipe README files before packaging
+        run: python3 recipes/checkReadmeIssues.py
+
       - name: Install dependencies
         run: |
           pip install jsonschema packaging
