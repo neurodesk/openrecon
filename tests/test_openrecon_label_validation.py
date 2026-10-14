@@ -472,12 +472,46 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         recipe_dir = REPO_ROOT / 'recipes' / 'qsmxt'
         label = json.loads((recipe_dir / 'OpenReconLabel.json').read_text())
 
+        expected_defaults = {
+            'config': 'qsmxt',
+            'inputseries': 'distortion-corrected',
+            'sendoutputs': 'qsm',
+            'inhomogeneitycorrection': 'standard',
+            'maskpreset': 'robust-threshold',
+            'pipelinepreset': 'custom',
+            'unwrappingalgorithm': 'romeo',
+            'bfalgorithm': 'vsharp',
+            'qsmalgorithm': 'rts',
+            'vsharpgrid': 'native',
+            'twopass': False,
+            'qsmreference': 'mean',
+            'sourceseparation': 'off',
+            'swiunwrapping': 'laplacian',
+        }
+        config_ids = ('qsmxt', 'qsmxt_gre_motion', 'qsmxt_ep3d', 'qsmxt_ep3d_denoise')
+        parameters = {parameter['id']: parameter for parameter in label['parameters']}
+        self.assertEqual(
+            [parameter['id'] for parameter in label['parameters']],
+            list(expected_defaults),
+        )
+        self.assertEqual([value['id'] for value in parameters['config']['values']], list(config_ids))
+        self.assertEqual(
+            [value['id'] for value in parameters['pipelinepreset']['values']],
+            [
+                'custom', 'romeo-resharp-rts', 'romeo-ismv-hdqsm',
+                'romeo-resharp-tikhonov', 'romeo-resharp-tv', 'romeo-resharp-hdqsm',
+                'romeo-ismv-rts', 'romeo-ismv-whqsm', 'romeo-sharp-whqsm',
+                'romeo-resharp-whqsm', 'romeo-sharp-tikhonov', 'qsmart', 'tgv',
+                'autoqsm', 'nextqsm', 'iqsm', 'iqsm-plus',
+            ],
+        )
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = pathlib.Path(tmpdir)
             stage_dir = tmpdir / 'stage'
             stage_dir.mkdir()
-            fire_img = tmpdir / 'FIRE_neurodesk_qsmxt_V9.15.0.img'
-            docs = tmpdir / 'OpenRecon_neurodesk_qsmxt_V9.15.0.pdf'
+            fire_img = tmpdir / f'FIRE_neurodesk_qsmxt_V{label["general"]["version"]}.img'
+            docs = tmpdir / f'OpenRecon_neurodesk_qsmxt_V{label["general"]["version"]}.pdf'
             fire_img.write_text('img')
             docs.write_text('pdf')
 
@@ -512,22 +546,16 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertIn('<AutoConfigure></AutoConfigure>', workflow_xml)
             self.assertNotIn('<AutoConfigure>image2image</AutoConfigure>', workflow_xml)
             self.assertEqual(config['parameters']['config'], 'qsmxt')
-            self.assertNotIn('pipelinepreset', config['parameters'])
+            self.assertEqual(config['parameters'], expected_defaults)
             self.assertEqual(config['parameters']['qsmalgorithm'], 'rts')
-            for config_id in ('qsmxt', 'qsmxt_ep3d', 'qsmxt_ep3d_denoise'):
+            for config_id in config_ids:
                 with self.subTest(config_id=config_id):
                     generated = json.loads(
                         (ice_dir / 'fire' / 'config' / f'wip_070_fire_{config_id}.json').read_text()
                     )['parameters']
-                    self.assertEqual(generated['config'], config_id)
-                    self.assertEqual(len(generated), 14)
+                    self.assertEqual(generated, dict(expected_defaults, config=config_id))
                     self.assertIs(generated['twopass'], False)
-                    self.assertIs(generated['motioncorrection'], False)
-                    self.assertIsInstance(generated['qsmreference'], str)
-                    self.assertEqual(generated['qsmreference'], 'mean')
-                    self.assertEqual(generated['vsharpgrid'], 'native')
-                    self.assertEqual(generated['swiunwrapping'], 'laplacian')
-                    self.assertNotIn('pipelinepreset', generated)
+                    self.assertNotIn('motioncorrection', generated)
             self.assertNotEqual(set(config['parameters']), {'options', 'sendOriginal'})
 
     def test_removes_platform_metadata_files_from_fire_bundle_output(self):
