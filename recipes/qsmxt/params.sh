@@ -3,7 +3,7 @@
 export toolName=qsmxt
 export version=10.0.0
 
-export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261014@sha256:bb9c4e346dc1b7e9085ed200ea3b0aae30e9c34aa37cf70f396b83ac5ee1823d
+export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261014@sha256:cb4649c307b3ceb657eb6cc64fffe426db89aad0b0f04b664da08beeac9017cf
 # this image is build based on 
 # https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/build.yaml
 # source .venv/bin/activate
