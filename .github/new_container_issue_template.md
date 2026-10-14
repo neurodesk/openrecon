@@ -167,8 +167,12 @@ auto_close_duration=900
 - `remote_ssh_key_file` is a PuTTY `.ppk` private key that has to sit in `C:\Medcom\MriCustomer\ice\fire\`. Create the key pair with `ssh-keygen -t rsa -b 4096`, convert it with `puttygen ~/.ssh/id_rsa -o ~/.ssh/id_rsa.ppk`, and install the public key on the compute machine with `ssh-copy-id -i ~/.ssh/id_rsa.pub <user>@<IP>`.
 - Read the fingerprint with `ssh-keygen -E md5 -l -f <(ssh-keyscan <IP>)` on Linux or `plink.exe -v <IP>` on Windows, and enter the 32-character MD5 string without the `MD5:` prefix.
 
+#### B4. Test
+
+Run the sequence with the FIRE workflow selected and watch the container output. Reconstructed images are returned over the same connection, so nothing else needs to be configured.
 
 ## Release
 
-Once tested, upload the openrecon bundles to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make them available to all institutes.
+Once tested, upload the bundles to https://webclient.au.api.teamplay.siemens-healthineers.com/ and make them available to all institutes.
 
+Please close this issue when completed :)
