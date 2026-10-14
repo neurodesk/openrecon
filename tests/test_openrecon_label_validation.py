@@ -512,8 +512,22 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             self.assertIn('<AutoConfigure></AutoConfigure>', workflow_xml)
             self.assertNotIn('<AutoConfigure>image2image</AutoConfigure>', workflow_xml)
             self.assertEqual(config['parameters']['config'], 'qsmxt')
-            self.assertIn('pipelinepreset', config['parameters'])
-            self.assertIn('qsmalgorithm', config['parameters'])
+            self.assertNotIn('pipelinepreset', config['parameters'])
+            self.assertEqual(config['parameters']['qsmalgorithm'], 'rts')
+            for config_id in ('qsmxt', 'qsmxt_ep3d', 'qsmxt_ep3d_denoise'):
+                with self.subTest(config_id=config_id):
+                    generated = json.loads(
+                        (ice_dir / 'fire' / 'config' / f'wip_070_fire_{config_id}.json').read_text()
+                    )['parameters']
+                    self.assertEqual(generated['config'], config_id)
+                    self.assertEqual(len(generated), 14)
+                    self.assertIs(generated['twopass'], False)
+                    self.assertIs(generated['motioncorrection'], False)
+                    self.assertIsInstance(generated['qsmreference'], str)
+                    self.assertEqual(generated['qsmreference'], 'mean')
+                    self.assertEqual(generated['vsharpgrid'], 'native')
+                    self.assertEqual(generated['swiunwrapping'], 'laplacian')
+                    self.assertNotIn('pipelinepreset', generated)
             self.assertNotEqual(set(config['parameters']), {'options', 'sendOriginal'})
 
     def test_removes_platform_metadata_files_from_fire_bundle_output(self):
