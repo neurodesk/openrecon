@@ -383,6 +383,7 @@ echo "✓ Host Docker daemon is reachable"
 
 # Publishing must resolve the declared image in the fresh DinD daemon, without
 # importing a host image (including same-name tags or localDockerImage overrides).
+export REGISTRY_BASE_DOCKER_IMAGE="$baseDockerImage"
 if [[ "$FORCE_REMOTE_IMAGE" != "true" ]]; then
     echo "🔍 Checking local Docker cache..."
     if [ -n "$localDockerImage" ] && docker_image_exists "$localDockerImage"; then

@@ -1,6 +1,10 @@
+import contextlib
+import io
+import json
 import os
 import shlex
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,6 +33,7 @@ class BaseImageSelectionTests(unittest.TestCase):
                 'if [ "$1" = "-u" ]; then\n'
                 '  printf "BUILD_ENV:%s|%s|%s|%s\\n" "$baseDockerImage" '
                 '"$DOCKER_IMAGE_TO_USE" "$USE_LOCAL_IMAGE" "$FORCE_LOCAL_ONLY"\n'
+                '  printf "REGISTRY_IMAGE:%s\\n" "$REGISTRY_BASE_DOCKER_IMAGE"\n'
                 'fi\nexit 0'
             ), '7z': 'exit 0'}
             scripts['docker'] = (
@@ -82,6 +87,7 @@ class BaseImageSelectionTests(unittest.TestCase):
                                     override='intentional:local')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Docker image to use: intentional:local\n', result.stdout)
+        self.assertIn('REGISTRY_IMAGE:registry/test:20261005\n', result.stdout)
 
     def test_remote_only_ignores_all_host_images_and_preserves_reference(self):
         for reference in ('registry:5000/test_1.0.0', 'registry/test:latest',
@@ -164,3 +170,163 @@ class BaseImageSelectionTests(unittest.TestCase):
             self.assertNotIn('docker load', command[-1])
             self.assertNotIn('.base_image.tar', command[-1])
         ensure_dind.assert_called_with('docker:24.0-dind', False)
+
+
+class BaseImageArchiveTests(unittest.TestCase):
+    PINNED_IMAGE = 'registry/test:20261014@sha256:' + 'a' * 64
+    CONFIG = 'blobs/sha256/' + 'b' * 64
+    LAYER = 'blobs/sha256/' + 'c' * 64
+
+    def write_tar(self, path, members):
+        with tarfile.open(path, 'w') as archive:
+            for name, content in members.items():
+                member = tarfile.TarInfo(name)
+                member.size = len(content)
+                archive.addfile(member, io.BytesIO(content))
+
+    def write_archive(self, path, missing=()):
+        manifest = [{'Config': self.CONFIG, 'RepoTags': [], 'Layers': [self.LAYER]}]
+        members = {
+            'manifest.json': json.dumps(manifest).encode(),
+            self.CONFIG: b'{}',
+            self.LAYER: b'layer contents',
+        }
+        self.write_tar(path, {name: content for name, content in members.items() if name not in missing})
+
+    @contextlib.contextmanager
+    def build_context(self, missing=(), existing=True):
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory):
+            root = Path(directory)
+            if existing:
+                self.write_archive(root / '.base_image.tar', missing)
+            openrecon_build.write_openrecon_dockerfile(
+                self.PINNED_IMAGE, 'OpenRecon.dockerfile', {},
+            )
+
+            def docker_command(command, **kwargs):
+                if command[:2] == ['docker', 'save']:
+                    self.write_archive(root / command[3], missing)
+                return b''
+
+            with (
+                mock.patch.dict(os.environ, {'CI': '1'}),
+                mock.patch.object(openrecon_build, 'ensure_dind_image_available') as ensure_dind,
+                mock.patch.object(openrecon_build, 'run_dind_build_process') as run_dind,
+                mock.patch.object(openrecon_build.subprocess, 'check_output', side_effect=docker_command),
+                mock.patch.object(openrecon_build.subprocess, 'run'),
+            ):
+                yield root, ensure_dind, run_dind
+
+    def build(self, **overrides):
+        arguments = dict(
+            docker_image_name='openrecon_test:v1.0.0',
+            dockerfile_path='OpenRecon.dockerfile',
+            openrecon_tar_name='OpenRecon_test.tar',
+            fire_img_name='FIRE_test.img',
+            fire_rootfs_tar_name='FIRE_test.rootfs.tar',
+            create_openrecon_package=True,
+            create_fire_package=False,
+            use_local_image=True,
+            base_docker_image=self.PINNED_IMAGE,
+            force_local_only=False,
+            keep_cache=True,
+            fire_free_space_mb=50,
+            fire_server_command=openrecon_build.get_fire_server_command(),
+            startup_script_path='/usr/local/bin/start-fire-openrecon.sh',
+            validate_default_runtime=True,
+            config_module_names=['test'],
+        )
+        arguments.update(overrides)
+        return openrecon_build.build_artifacts_in_dind(**arguments)
+
+    def test_incomplete_digest_cache_falls_back_to_registry(self):
+        for existing in (False, True):
+            for missing in ((self.CONFIG,), (self.LAYER,), (self.CONFIG, self.LAYER)):
+                with self.subTest(existing=existing, missing=missing), self.build_context(
+                    missing=missing, existing=existing,
+                ) as (root, _, run_dind):
+                    self.assertIsNone(self.build())
+                    self.assertFalse((root / '.base_image.tar').exists())
+                    self.assertNotIn('docker load', run_dind.call_args.args[0][-1])
+                    self.assertEqual(
+                        (root / 'OpenRecon.dockerfile').read_text().splitlines()[0],
+                        f'FROM {self.PINNED_IMAGE}',
+                    )
+
+    def test_incomplete_digest_cache_fails_in_local_only_mode(self):
+        for existing in (False, True):
+            for missing in ((self.CONFIG,), (self.LAYER,), (self.CONFIG, self.LAYER)):
+                with self.subTest(existing=existing, missing=missing), self.build_context(
+                    missing=missing, existing=existing,
+                ) as (root, ensure_dind, run_dind):
+                    with self.assertRaisesRegex(RuntimeError, f'cache integrity.*{missing[0]}'):
+                        self.build(force_local_only=True)
+                    self.assertFalse((root / '.base_image.tar').exists())
+                    ensure_dind.assert_not_called()
+                    run_dind.assert_not_called()
+
+    def test_complete_archive_is_loaded_in_online_and_local_only_modes(self):
+        for existing in (False, True):
+            for local_only in (False, True):
+                with self.subTest(existing=existing, local_only=local_only), self.build_context(
+                    existing=existing,
+                ) as (root, ensure_dind, run_dind):
+                    self.assertEqual(self.build(force_local_only=local_only), '.base_image.tar')
+                    self.assertTrue((root / '.base_image.tar').is_file())
+                    self.assertIn('docker load -i /workspace/.base_image.tar', run_dind.call_args.args[0][-1])
+                    ensure_dind.assert_called_once_with('docker:24.0-dind', local_only)
+
+    def test_incomplete_local_override_falls_back_to_declared_registry_reference(self):
+        with self.build_context(missing=(self.LAYER,)) as (root, _, run_dind):
+            dockerfile = root / 'OpenRecon.dockerfile'
+            openrecon_build.write_openrecon_dockerfile('intentional:local', dockerfile, {})
+            original_instructions = dockerfile.read_text().splitlines()[1:]
+            self.assertIsNone(self.build(
+                base_docker_image='intentional:local', registry_base_docker_image=self.PINNED_IMAGE,
+            ))
+            self.assertEqual(dockerfile.read_text().splitlines(), [
+                f'FROM {self.PINNED_IMAGE}', *original_instructions,
+            ])
+            self.assertNotIn('docker load', run_dind.call_args.args[0][-1])
+
+    def test_invalid_archives_fail_before_starting_dind(self):
+        manifests = [b'not JSON', b'[]', b'{}', b'[{}]',
+                     b'[{"Config": "config.json", "Layers": "layer.tar"}]',
+                     b'[{"Config": "config.json", "Layers": [null]}]']
+        invalid_members = [
+            {},
+            *({'manifest.json': manifest, 'config.json': b'{}'} for manifest in manifests),
+        ]
+        for members in invalid_members:
+            with self.subTest(members=members), self.build_context() as (root, ensure_dind, run_dind):
+                self.write_tar(root / '.base_image.tar', members)
+                with self.assertRaisesRegex(RuntimeError, 'cache integrity'):
+                    self.build(force_local_only=True)
+                ensure_dind.assert_not_called()
+                run_dind.assert_not_called()
+                self.assertFalse((root / '.base_image.tar').exists())
+
+    def test_truncated_archive_is_rejected(self):
+        with self.build_context() as (root, ensure_dind, run_dind):
+            archive_path = root / '.base_image.tar'
+            with tarfile.open(archive_path) as archive:
+                layer_offset = archive.getmember(self.LAYER).offset_data
+            with archive_path.open('r+b') as archive_file:
+                archive_file.truncate(layer_offset + 3)
+            with self.assertRaisesRegex(RuntimeError, 'cache integrity'):
+                self.build(force_local_only=True)
+            ensure_dind.assert_not_called()
+            run_dind.assert_not_called()
+
+    def test_classic_docker_save_layout_and_scratch_images_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / 'image.tar'
+            for layers in ([], ['layer/layer.tar']):
+                with self.subTest(layers=layers):
+                    manifest = [{'Config': 'config.json', 'Layers': layers}]
+                    self.write_tar(archive_path, {
+                        'manifest.json': json.dumps(manifest).encode(),
+                        'config.json': b'{}',
+                        'layer/layer.tar': b'layer contents',
+                    })
+                    openrecon_build.validate_docker_image_archive(archive_path)

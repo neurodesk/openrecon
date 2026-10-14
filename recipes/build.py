@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import time
@@ -1091,6 +1092,41 @@ def build_fire_bundle_stage(stage_dir, fire_img_path, fire_ini_name, fire_ini_te
 
 
 
+def validate_docker_image_archive(archive_path):
+    """Check docker save references without extracting or reading entire layers."""
+    with tarfile.open(archive_path, 'r:') as archive:
+        manifest_file = archive.extractfile('manifest.json')
+        if manifest_file is None:
+            raise ValueError('manifest.json is not a file')
+        with manifest_file:
+            manifest = json.load(manifest_file)
+        if not isinstance(manifest, list) or not manifest:
+            raise ValueError('manifest.json must contain at least one image')
+
+        for image in manifest:
+            if (
+                not isinstance(image, dict)
+                or not isinstance(image.get('Config'), str)
+                or not isinstance(image.get('Layers'), list)
+            ):
+                raise ValueError('manifest.json has invalid Config or Layers fields')
+            for reference in [image['Config'], *image['Layers']]:
+                if not isinstance(reference, str) or not reference:
+                    raise ValueError('manifest.json contains an invalid member reference')
+                try:
+                    member_file = archive.extractfile(reference)
+                except KeyError as exc:
+                    raise ValueError(f'missing archive member: {reference}') from exc
+                if member_file is None:
+                    raise ValueError(f'archive member is not a file: {reference}')
+                with member_file:
+                    if member_file.seek(0, os.SEEK_END) == 0:
+                        raise ValueError(f'archive member is empty: {reference}')
+                    member_file.seek(-1, os.SEEK_END)
+                    if not member_file.read(1):
+                        raise ValueError(f'archive member is truncated: {reference}')
+
+
 def build_artifacts_in_dind(
     docker_image_name,
     dockerfile_path,
@@ -1108,6 +1144,7 @@ def build_artifacts_in_dind(
     startup_script_path,
     validate_default_runtime,
     config_module_names,
+    registry_base_docker_image=None,
 ):
     base_image_tar = None
     if use_local_image:
@@ -1123,10 +1160,27 @@ def build_artifacts_in_dind(
                 print(f'\n🗑️  Removing existing {base_image_tar} because KEEP_CACHE=false')
                 os.remove(base_image_tar)
 
-        if not os.path.exists(base_image_tar):
-            print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
-            subprocess.check_output(['docker', 'save', '-o', base_image_tar, base_docker_image], stderr=subprocess.STDOUT)
-            print('✓ Base image saved successfully')
+        try:
+            if not os.path.exists(base_image_tar):
+                print(f'💾 Saving base image to {base_image_tar}... (this may take 2-3 minutes)')
+                subprocess.check_output(['docker', 'save', '-o', base_image_tar, base_docker_image], stderr=subprocess.STDOUT)
+            print(f'🔍 Validating base image archive: {base_image_tar}')
+            validate_docker_image_archive(base_image_tar)
+            print('✓ Base image archive is complete')
+        except (OSError, tarfile.TarError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+            Path(base_image_tar).unlink(missing_ok=True)
+            message = f'Local Docker cache integrity error for {base_docker_image}: {exc}'
+            if force_local_only:
+                raise RuntimeError(f'{message}. --local-cache forbids registry fallback.') from exc
+            print(f'⚠️  {message}')
+            registry_image = registry_base_docker_image or base_docker_image
+            print(f'Fetching registry image in isolated DinD instead: {registry_image}')
+            if registry_image != base_docker_image:
+                dockerfile = Path(dockerfile_path)
+                lines = dockerfile.read_text().splitlines(keepends=True)
+                lines[0] = f'FROM {registry_image}\n'
+                dockerfile.write_text(''.join(lines))
+            base_image_tar = None
     else:
         print('Using remote base image:', base_docker_image)
 
@@ -1469,6 +1523,7 @@ if __name__ == '__main__':
             startup_script_path=startupScriptPath,
             validate_default_runtime=validateDefaultFireRuntime,
             config_module_names=get_openrecon_config_module_names(jsonData),
+            registry_base_docker_image=os.getenv('REGISTRY_BASE_DOCKER_IMAGE', baseDockerImage),
         )
 
         print('\n' + '=' * 70)
