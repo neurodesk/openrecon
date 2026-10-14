@@ -1,5 +1,6 @@
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -12,10 +13,16 @@ TEST_RECIPE_DIR = REPOSITORY_ROOT / "recipes" / "qsmxt"
 BUILD_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "build-apps.yml"
 
 
-def run_build_until_docker_check(temporary_path):
+def run_build_until_docker_probe(temporary_path):
     recipe_directory = temporary_path / "recipe"
     recipe_directory.mkdir()
     (recipe_directory / "README.md").write_text("# Test recipe\n")
+    (recipe_directory / "OpenReconLabel.json").write_text("{}\n")
+    (recipe_directory / "params.sh").write_text(
+        "export toolName=test\n"
+        "export version=1.0.0\n"
+        "export baseDockerImage=example/test_1.0.0\n"
+    )
 
     fake_bin = temporary_path / "bin"
     fake_bin.mkdir()
@@ -24,11 +31,20 @@ def run_build_until_docker_check(temporary_path):
         fake_command.write_text("#!/bin/sh\nexit 0\n")
         fake_command.chmod(0o755)
 
-    environment = os.environ.copy()
-    environment["HOME"] = str(temporary_path)
-    environment["NVM_DIR"] = str(temporary_path / ".nvm")
-    environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"
-    environment["CI"] = "1"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text("#!/bin/sh\nexit 1\n")
+    fake_docker.chmod(0o755)
+
+    # Expose only the utilities needed by the fixture, excluding host npm and nvm.
+    for command_name in ("cp", "dirname", "mv", "rm", "sed", "touch"):
+        (fake_bin / command_name).symlink_to(shutil.which(command_name))
+
+    environment = {
+        "HOME": str(temporary_path),
+        "NVM_DIR": str(temporary_path / ".nvm"),
+        "PATH": str(fake_bin),
+        "CI": "1",
+    }
 
     return subprocess.run(
         ["/bin/bash", str(BUILD_SCRIPT)],
@@ -38,6 +54,7 @@ def run_build_until_docker_check(temporary_path):
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
+        timeout=10,
     )
 
 
@@ -103,7 +120,7 @@ class BuildScriptEnvironmentTests(unittest.TestCase):
             node_marker = temporary_path / "node-command-was-invoked"
 
             fake_mdpdf = nvm_bin / "mdpdf"
-            fake_mdpdf.write_text("#!/bin/sh\ntouch README.pdf\nexit 0\n")
+            fake_mdpdf.write_text("#!/bin/sh\nprintf 'pdf' > README.pdf\n")
             fake_mdpdf.chmod(0o755)
 
             nvm_script = temporary_path / ".nvm" / "nvm.sh"
@@ -117,44 +134,53 @@ class BuildScriptEnvironmentTests(unittest.TestCase):
                 "}\n"
             )
 
-            result = run_build_until_docker_check(temporary_path)
+            result = run_build_until_docker_probe(temporary_path)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Docker is not installed", result.stdout)
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("README.pdf generated successfully", result.stdout)
+            self.assertIn("Docker daemon is not reachable", result.stdout)
             self.assertFalse(node_marker.exists(), result.stdout)
 
-    def test_missing_nvm_node_uses_local_version_before_installing(self):
+    def test_nvm_node_uses_local_version_before_installing(self):
+        for node_is_installed in (True, False):
+            with self.subTest(node_is_installed=node_is_installed):
+                self.check_nvm_node_discovery(node_is_installed)
+
+    def check_nvm_node_discovery(self, node_is_installed):
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_path = Path(temporary_directory)
             nvm_directory = temporary_path / ".nvm"
             nvm_directory.mkdir()
             node_log = temporary_path / "node-commands.log"
 
+            fake_mdpdf = nvm_directory / "mdpdf"
+            fake_mdpdf.write_text("#!/bin/sh\nprintf 'pdf' > README.pdf\n")
+            fake_mdpdf.chmod(0o755)
+
             nvm_script = nvm_directory / "nvm.sh"
             nvm_script.write_text(
                 "nvm() {\n"
                 f"    printf 'nvm %s\\n' \"$*\" >> {shlex.quote(str(node_log))}\n"
-                "    if [ \"$1\" = \"use\" ]; then\n"
+                f"    if [ \"$1\" = \"use\" ] && {str(not node_is_installed).lower()}; then\n"
                 "        return 1\n"
                 "    fi\n"
                 "    npm() {\n"
                 f"        printf 'npm %s\\n' \"$*\" >> {shlex.quote(str(node_log))}\n"
+                f"        cp {shlex.quote(str(fake_mdpdf))} {shlex.quote(str(temporary_path / 'bin' / 'mdpdf'))}\n"
                 "    }\n"
                 "}\n"
             )
 
-            result = run_build_until_docker_check(temporary_path)
+            result = run_build_until_docker_probe(temporary_path)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Docker is not installed", result.stdout)
-            self.assertEqual(
-                node_log.read_text().splitlines(),
-                [
-                    "nvm use --silent v22.3.0",
-                    "nvm install v22.3.0",
-                    "npm install -g mdpdf",
-                ],
-            )
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("README.pdf generated successfully", result.stdout)
+            self.assertIn("Docker daemon is not reachable", result.stdout)
+            expected_commands = ["nvm use --silent v22.3.0"]
+            if not node_is_installed:
+                expected_commands.append("nvm install v22.3.0")
+            expected_commands.append("npm install -g mdpdf")
+            self.assertEqual(node_log.read_text().splitlines(), expected_commands)
 
     def test_pdf_generation_retries_transient_failures(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
