@@ -892,5 +892,29 @@ class ExperimentalRawValidationTests(unittest.TestCase):
             openrecon_build.validate_openrecon_label_metadata(self.label)
 
 
+class FireBundleOutputTests(unittest.TestCase):
+    def test_move_directory_contents_renames_without_copying(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            stage = tmp / 'fire-bundle-stage'
+            (stage / 'Ice' / 'fire' / 'chroot').mkdir(parents=True)
+            image = stage / 'Ice' / 'fire' / 'chroot' / 'FIRE_test.img'
+            image.write_bytes(b'image')
+            (stage / 'INSTALL_FIRE.txt').write_text('install')
+            image_inode = image.stat().st_ino
+            output = tmp / 'fire' / 'FIRE_test'
+            output.mkdir(parents=True)
+            (output / 'stale.txt').write_text('old build')
+
+            openrecon_build.move_directory_contents(stage, output)
+
+            moved_image = output / 'Ice' / 'fire' / 'chroot' / 'FIRE_test.img'
+            self.assertEqual(moved_image.read_bytes(), b'image')
+            self.assertEqual(moved_image.stat().st_ino, image_inode)
+            self.assertEqual((output / 'INSTALL_FIRE.txt').read_text(), 'install')
+            self.assertFalse((output / 'stale.txt').exists())
+            self.assertEqual(list(stage.iterdir()), [])
+
+
 if __name__ == '__main__':
     unittest.main()

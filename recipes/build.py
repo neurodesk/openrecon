@@ -796,6 +796,30 @@ def get_path_size_bytes(path):
     return os.path.getsize(path)
 
 
+def move_directory_contents(source_dir, destination_dir):
+    """Move every entry of source_dir into a fresh destination_dir.
+
+    Both live under the recipe directory, so this is a rename rather than a
+    copy and never needs a second copy of the multi-GiB FIRE image on disk.
+    """
+    source_dir = Path(source_dir)
+    destination_dir = Path(destination_dir)
+    if destination_dir.is_dir():
+        shutil.rmtree(destination_dir)
+    elif destination_dir.exists():
+        destination_dir.unlink()
+    destination_dir.mkdir(parents=True)
+    for entry in source_dir.iterdir():
+        shutil.move(str(entry), str(destination_dir / entry.name))
+
+
+def remove_if_exists(path):
+    """Delete a build intermediate as soon as it is no longer needed."""
+    if os.path.exists(path):
+        os.remove(path)
+        print(f'🗑️  Removed {path}')
+
+
 def remove_platform_metadata_files(path):
     if not os.path.isdir(path):
         return
@@ -1549,6 +1573,8 @@ if __name__ == '__main__':
             print(f'📦 Packaging OpenRecon bundle into {os.path.basename(openrecon_zip_output_path)}...')
             package_with_7z(zipExe, openrecon_zip_output_path, [openreconTarName, openreconPdfName])
             print('✓ OpenRecon package created successfully')
+            # The FIRE bundle does not use the OpenRecon tar; free its space now.
+            remove_if_exists(openreconTarName)
 
         if createFirePackage:
             fire_output_dir = os.path.join(output_dir, 'fire')
@@ -1576,13 +1602,10 @@ if __name__ == '__main__':
                     package_name=name,
                     recipe_dir=Path.cwd(),
                 )
-                if os.path.exists(fire_bundle_output_path):
-                    if os.path.isdir(fire_bundle_output_path):
-                        shutil.rmtree(fire_bundle_output_path)
-                    else:
-                        os.remove(fire_bundle_output_path)
+                # The stage holds its own copy of the FIRE image.
+                remove_if_exists(fireImgName)
                 print(f'📁 Writing FIRE bundle folder to {fire_bundle_output_path}...')
-                shutil.copytree(stage_dir, fire_bundle_output_path)
+                move_directory_contents(stage_dir, fire_bundle_output_path)
                 remove_platform_metadata_files(fire_bundle_output_path)
             print('✓ FIRE bundle folder created successfully')
 
