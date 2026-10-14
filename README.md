@@ -37,9 +37,20 @@ cd recipes/qsmxt
 # Prefer the local Docker cache, then fall back to the remote image.
 /bin/bash ../build.sh
 
+# Use the declared registry image, ignoring host base-image caches and overrides.
+/bin/bash ../build.sh --remote-only
+
 # Or require an already-cached local Docker image.
 /bin/bash ../build.sh --local-cache
 ```
+
+Publishing workflows use `--remote-only` so a local development image cannot
+replace the recipe's `baseDockerImage` as the packaged artifact's source. The fresh Docker-in-Docker builder
+resolves that reference from the registry and does not import a cached base-image
+tar. This option cannot be combined with `--local-cache`. Pin `baseDockerImage`
+by digest when the source must remain immutable; tags can change in the registry.
+Host-side CUDA/root prechecks can still inspect a cached same-reference image;
+this option controls the artifact source, not the freshness of those prechecks.
 
 `build.sh` refuses to install Python packages unless a virtual environment is
 active. Missing `jsonschema` and `packaging` dependencies are installed into

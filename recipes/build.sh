@@ -8,6 +8,7 @@ REPOSITORY_ROOT=$(cd -- "$BUILD_SCRIPT_DIR/.." && pwd)
 # Command-line options
 IGNORE_MDPDF=false
 FORCE_LOCAL_CACHE=false
+FORCE_REMOTE_IMAGE=false
 EXPERIMENTAL_RAW_RETURN=false
 BUILD_PACKAGE_SELECTION=${BUILD_PACKAGE_SELECTION:-openrecon}
 
@@ -20,6 +21,7 @@ Options:
   --ignore-mdpdf               Skip README.md -> README.pdf generation
   --local-cache                Force using an already-cached local base Docker image
                                (auto-preloads the DinD bootstrap image if needed)
+  --remote-only                Use the declared registry base image; ignore all host base-image caches
   -h, --help                   Show this help message
 EOF
 }
@@ -38,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_LOCAL_CACHE=true
             shift
             ;;
+        --remote-only)
+            FORCE_REMOTE_IMAGE=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -49,6 +55,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$FORCE_REMOTE_IMAGE" == "true" && "$FORCE_LOCAL_CACHE" == "true" ]]; then
+    echo "Error: --remote-only and --local-cache cannot be used together."
+    exit 1
+fi
 
 PYTHON_BIN=$(command -v python3 || true)
 if [ -z "$PYTHON_BIN" ] || ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix else 1)'; then
@@ -370,17 +381,26 @@ if ! docker_with_timeout ps --format '{{.ID}}' >/dev/null 2>&1; then
 fi
 echo "✓ Host Docker daemon is reachable"
 
-echo "🔍 Checking local Docker cache..."
-if [ -n "$localDockerImage" ] && docker_image_exists "$localDockerImage"; then
-    LOCAL_IMAGE_TAG="$localDockerImage"
-elif [ -n "$CANONICAL_LOCAL_TAG" ] && docker_image_exists "$CANONICAL_LOCAL_TAG"; then
-    LOCAL_IMAGE_TAG="$CANONICAL_LOCAL_TAG"
-elif docker_image_exists "$baseDockerImage"; then
-    LOCAL_IMAGE_TAG="$baseDockerImage"
+# Publishing must resolve the declared image in the fresh DinD daemon, without
+# importing a host image (including same-name tags or localDockerImage overrides).
+if [[ "$FORCE_REMOTE_IMAGE" != "true" ]]; then
+    echo "🔍 Checking local Docker cache..."
+    if [ -n "$localDockerImage" ] && docker_image_exists "$localDockerImage"; then
+        LOCAL_IMAGE_TAG="$localDockerImage"
+    elif [ -n "$CANONICAL_LOCAL_TAG" ] && docker_image_exists "$CANONICAL_LOCAL_TAG"; then
+        LOCAL_IMAGE_TAG="$CANONICAL_LOCAL_TAG"
+    elif docker_image_exists "$baseDockerImage"; then
+        LOCAL_IMAGE_TAG="$baseDockerImage"
+    fi
+    echo "✓ Local Docker cache lookup complete"
 fi
-echo "✓ Local Docker cache lookup complete"
 
-if [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
+if [[ "$FORCE_REMOTE_IMAGE" == "true" ]]; then
+    echo "Using remote image (forced): $baseDockerImage"
+    export DOCKER_IMAGE_TO_USE="$baseDockerImage"
+    export USE_LOCAL_IMAGE=false
+    export FORCE_LOCAL_ONLY=false
+elif [[ "$FORCE_LOCAL_CACHE" == "true" ]]; then
     if [ -z "$LOCAL_IMAGE_TAG" ]; then
         echo "Error: --local-cache was requested, but no matching local image was found."
         echo "Checked:"
