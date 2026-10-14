@@ -4,7 +4,7 @@ export toolName=qsmxt
 export version=10.0.0
 export openrecon_version=10.0.1
 
-export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261014@sha256:cb4649c307b3ceb657eb6cc64fffe426db89aad0b0f04b664da08beeac9017cf
+export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261014@sha256:7770e72ea22b495d6c3ca00a945b3ac148d100b4e30848ef61ee30c20b8f8c4e
 # this image is build based on 
 # https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/build.yaml
 # source .venv/bin/activate
