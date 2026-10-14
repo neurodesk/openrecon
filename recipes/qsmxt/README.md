@@ -17,7 +17,7 @@ An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontaine
 With the QSMxT package installed in OpenRecon:
 
 1. Select **qsmxt** as the reconstruction package. Leave **Config** set to **standard GRE**.
-2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
+2. Set **Input images** to match your acquisition. The default is **Prefer distortion corrected**.
 3. Leave **Pipeline preset** on **Custom algorithm controls**. Leave **Dipole inversion** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
 4. Leave **Mask preset** on **Robust threshold** to threshold the combined magnitude image.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
@@ -29,9 +29,11 @@ With the QSMxT package installed in OpenRecon:
 
 | Option | When to use it |
 | --- | --- |
-| Distortion corrected | Process the corrected magnitude and phase images. This is the default. |
+| Prefer distortion corrected | Prefer the corrected pair; use a complete ND pair if a preferred component is missing. This is the default. |
 | Not distortion corrected (ND) | Process the magnitude and phase series marked `ND`. |
 | Both | Compare corrected and uncorrected results. Both magnitude/phase pairs must be available. |
+
+Series without a separate `ND` name token use the preferred slot, including unmarked acquisitions. This naming convention does not verify physical distortion correction. The default falls back only when a preferred magnitude or phase component is missing. Ambiguous inputs, incompatible echoes or geometry, and reconstruction errors do not trigger fallback. Explicit ND and Both remain strict. Fallback results carry `ND` labels.
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
@@ -63,15 +65,17 @@ Use **Output maps** to select what returns to the scanner database:
 | Option | Result |
 | --- | --- |
 | QSM | Quantitative susceptibility map. This is the default. |
-| All available | All available maps from the run, including the brain mask and combined magnitude image. |
-| Magnitude | Combined magnitude image. |
+| All available | Compatible maps from the run, including the brain mask. |
+| Magnitude | Combined magnitude image. Currently unavailable; see the note below. |
 | Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
 | SWI | Susceptibility-weighted image. |
 | SMWI | Susceptibility map-weighted images: the magnitude weighted by the QSM map. Returns a paramagnetic and a diamagnetic series. |
 | T2 star | T2* relaxation map. Use at least three equally spaced echoes. |
-| R2 star | R2* relaxation-rate map. Use a multi-echo acquisition. |
+| R2 star | R2* relaxation-rate map. Use at least three equally spaced echoes. |
 
-Original magnitude and phase images are always returned before the selected output maps.
+**All available** omits T2* and R2* when a selected input pair has fewer than three echoes. Other compatible maps still return. GRE echo limits apply before this check, and EPI repetitions produce one averaged echo. Selecting T2* or R2* explicitly with fewer than three echoes stops that pair before reconstruction or EPI preprocessing.
+
+Combined magnitude is currently not returned by this adapter, including with **All available**. See [issue #3631](https://github.com/neurodesk/neurocontainers/issues/3631). Original magnitude and phase images are always returned before the selected output maps.
 
 **SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins,
 iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such
