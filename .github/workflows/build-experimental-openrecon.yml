@@ -62,7 +62,7 @@ jobs:
           source "recipes/$APPLICATION/params.sh"
           docker pull "$baseDockerImage"
           rm -rf "recipes/$APPLICATION/openrecon" "recipes/$APPLICATION/fire"
-          (cd "recipes/$APPLICATION" && BUILD_PACKAGE_SELECTION=openrecon /bin/bash ../build.sh --experimental-raw-return)
+          (cd "recipes/$APPLICATION" && BUILD_PACKAGE_SELECTION=openrecon /bin/bash ../build.sh --remote-only --experimental-raw-return)
           expected="recipes/$APPLICATION/openrecon/OpenRecon_neurodesk_${APPLICATION}_V${version}.zip"
           mapfile -t archives < <(find "recipes/$APPLICATION" -type f -name '*.zip')
           test "${#archives[@]}" -eq 1
