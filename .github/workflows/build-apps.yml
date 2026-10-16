@@ -328,11 +328,4 @@ jobs:
         if: always()
         env:
           APPLICATION: ${{ matrix.application }}
-        run: |
-          # The self-hosted runners share one /storage disk. Packages left in the
-          # workspace until that runner's next checkout fill it for concurrent builds.
-          recipe_dir="recipes/$APPLICATION"
-          rm -rf "$recipe_dir/openrecon" "$recipe_dir/fire" "$recipe_dir"/fire-bundle-*
-          rm -f "$recipe_dir"/OpenRecon_*.tar "$recipe_dir"/FIRE_*.img \
-            "$recipe_dir"/FIRE_*.rootfs.tar "$recipe_dir/.base_image.tar"
-          df -h . || true
+        run: bash .github/scripts/cleanup-build.sh "$APPLICATION"

@@ -12,6 +12,7 @@ on:
       - 'recipes/build.sh'
       - 'tests/**'
       - '.github/scripts/*.py'
+      - '.github/scripts/*.sh'
       - '.github/workflows/build-config.json'
       - '.github/workflows/auto-build.yml'
       - '.github/workflows/build-experimental-openrecon.yml'

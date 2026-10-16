@@ -1,6 +1,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -73,6 +74,70 @@ class BuildPolicyTests(unittest.TestCase):
                     policy.main()
         with patch.object(sys, 'argv', ['build_policy.py', 'select', '["kspacefilter"]']):
             policy.main()
+
+
+class BuildCleanupTests(unittest.TestCase):
+    def run_cleanup(self, root, application):
+        return subprocess.run(
+            ['bash', str(ROOT / '.github/scripts/cleanup-build.sh'), application],
+            cwd=root, capture_output=True, text=True, check=False,
+        )
+
+    def test_removes_outputs_and_preserves_recipe_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe = root / 'recipes/test-app'
+            recipe.mkdir(parents=True)
+            for name in ('OpenReconLabel.json', 'params.sh', 'README.md',
+                         'OpenRecon_test.tar', 'FIRE_test.img',
+                         'FIRE_test.rootfs.tar', '.base_image.tar'):
+                (recipe / name).write_text('fixture')
+            for name in ('openrecon', 'fire', 'fire-bundle-stage'):
+                (recipe / name).mkdir()
+                (recipe / name / 'output').write_text('fixture')
+
+            result = self.run_cleanup(root, 'test-app')
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sorted(path.name for path in recipe.iterdir()),
+                             ['OpenReconLabel.json', 'README.md', 'params.sh'])
+            self.assertEqual(self.run_cleanup(root, 'test-app').returncode, 0)
+
+    def test_rejects_invalid_names_without_deleting_outside_recipes(self):
+        for application in ('', '..', '../outside', 'outside/../../outside'):
+            with self.subTest(application=application), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'recipes').mkdir()
+                (root / 'recipes/outside').mkdir()
+                output = root / 'openrecon'
+                output.mkdir()
+                marker = output / 'keep'
+                marker.write_text('outside recipe')
+                (root / 'outside').symlink_to(root, target_is_directory=True)
+
+                result = self.run_cleanup(root, application)
+
+                self.assertTrue(marker.is_file(), result.stdout + result.stderr)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_symlinked_and_unregistered_recipe_directories(self):
+        for symlinked in (False, True):
+            with self.subTest(symlinked=symlinked), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                recipes = root / 'recipes'
+                recipes.mkdir()
+                recipe = root / 'outside' if symlinked else recipes / 'unknown'
+                (recipe / 'fire').mkdir(parents=True)
+                marker = recipe / 'fire/keep'
+                marker.write_text('keep')
+                if symlinked:
+                    (recipe / 'OpenReconLabel.json').write_text('{}')
+                    (recipes / 'unknown').symlink_to(recipe, target_is_directory=True)
+
+                result = self.run_cleanup(root, 'unknown')
+
+                self.assertTrue(marker.is_file(), result.stdout + result.stderr)
+                self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == '__main__':
