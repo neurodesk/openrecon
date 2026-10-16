@@ -324,3 +324,8 @@ jobs:
             --title "New container ${IMAGENAME} / ${FIRE_IMAGENAME}" \
             --label enhancement \
             --body-file issue-body.md
+      - name: Remove build outputs from the shared runner disk
+        if: always()
+        env:
+          APPLICATION: ${{ matrix.application }}
+        run: bash .github/scripts/cleanup-build.sh "$APPLICATION"
