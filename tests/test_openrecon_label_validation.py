@@ -486,7 +486,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             'twopass': False,
             'qsmreference': 'mean',
             'sourceseparation': 'off',
-            'swiunwrapping': 'laplacian',
+            'regionalqsmtable': False,
         }
         config_ids = ('qsmxt', 'qsmxt_gre_motion', 'qsmxt_ep3d', 'qsmxt_ep3d_denoise')
         parameters = {parameter['id']: parameter for parameter in label['parameters']}
@@ -555,6 +555,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
                     )['parameters']
                     self.assertEqual(generated, dict(expected_defaults, config=config_id))
                     self.assertIs(generated['twopass'], False)
+                    self.assertIs(generated['regionalqsmtable'], False)
                     self.assertNotIn('motioncorrection', generated)
             self.assertNotEqual(set(config['parameters']), {'options', 'sendOriginal'})
 
