@@ -3,7 +3,7 @@
 export toolName=meica
 export version=4.0.1
 export openrecon_version=4.0.4
-export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261014@sha256:e65c419955b47d23e4b02e57a96f178216b6eb30da1c8962fff2f8e2cda68106
+export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20261016@sha256:809e07c323812fed2cab9e83bea750cd40795267acb7255545fe5aefa64fca48
 # this image is build based on 
 # https://github.com/neurodesk/neurocontainers/blob/main/recipes/meica/build.yaml
 # source .venv/bin/activate
