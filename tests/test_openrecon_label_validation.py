@@ -477,7 +477,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
             'inputseries': 'distortion-corrected',
             'sendoutputs': 'qsm',
             'inhomogeneitycorrection': 'standard',
-            'maskpreset': 'robust-threshold',
+            'maskpreset': 'hd-bet',
             'pipelinepreset': 'custom',
             'unwrappingalgorithm': 'romeo',
             'bfalgorithm': 'vsharp',
