@@ -33,7 +33,8 @@ jobs:
 
   publish:
     needs: selection
-    runs-on: self-hosted
+    # Ephemeral ARC pods of the neurocontainers pool, with a DinD sidecar.
+    runs-on: neurodesk-syd-arcrunner-neurocontainers
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +52,8 @@ jobs:
         with:
           path: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
           clean: true
+      - name: Install build tools
+        run: bash experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}/.github/scripts/install-build-tools.sh
       - name: Build and verify actual experimental bundle
         working-directory: experimental-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.application }}
         run: |
