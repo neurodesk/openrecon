@@ -16,7 +16,8 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted
+    # Ephemeral ARC pods of the neurocontainers pool, with a DinD sidecar.
+    runs-on: neurodesk-syd-arcrunner-neurocontainers
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +31,8 @@ jobs:
       FIRE_IMAGENAME: ${{ steps.IMAGEVARS.outputs.FIRE_IMAGENAME }}
     steps:
       - uses: actions/checkout@v5
+      - name: Install build tools
+        run: bash .github/scripts/install-build-tools.sh
       - name: Set environment variables
         id: ENVVARS
         run: |
